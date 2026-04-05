@@ -1,0 +1,3426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EV Trip Planner">
+<meta name="theme-color" content="#000000">
+<title>EV Trip Planner — ev4dummies.com</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f0f0eb; }
+#map { position:absolute; top:0; left:0; right:0; bottom:0; }
+
+/* ── PANEL ── */
+#panel {
+  position:absolute;
+  top:env(safe-area-inset-top, 12px);
+  left:12px;
+  z-index:1000;
+  background:rgba(255,255,255,0.98); border-radius:14px;
+  padding:0; width:330px;
+  box-shadow:0 4px 24px rgba(0,0,0,0.16);
+  max-height:calc(100vh - env(safe-area-inset-top,12px) - 12px);
+  display:flex; flex-direction:column;
+  overflow:hidden;
+  transition: transform 0.3s ease, width 0.3s ease;
+  margin-top:12px;
+}
+
+#panel.collapsed {
+  transform: translateX(calc(-100% - 12px));
+}
+
+/* Collapse/expand toggle button */
+#panel-toggle {
+  position:fixed;
+  top:calc(env(safe-area-inset-top,0px) + 185px);
+  left:0;
+  z-index:2000;
+  width:28px; height:56px;
+  background:#185FA5;
+  border:none; border-radius:0 10px 10px 0;
+  color:#fff; font-size:16px; cursor:pointer;
+  display:flex !important; align-items:center; justify-content:center;
+  box-shadow:2px 0 8px rgba(0,0,0,0.2);
+  transition: left 0.3s ease;
+  padding:0;
+  visibility:visible !important;
+}
+#panel-toggle.open { left:342px; }
+#panel-toggle:hover { background:#0f4a8a; }
+
+#panel-header {
+  padding:13px 16px 11px;
+  padding-top:max(13px, env(safe-area-inset-top, 13px));
+  background:linear-gradient(135deg,#0d2340,#185FA5);
+  border-radius:14px 14px 0 0;
+  flex-shrink:0;
+}
+
+.panel-title { font-size:13px; font-weight:700; color:#fff; letter-spacing:0.04em; display:flex; align-items:center; gap:7px; }
+.panel-title span { opacity:0.7; font-size:10px; font-weight:400; }
+
+.trip-name-row { display:flex; align-items:center; gap:6px; margin-top:7px; }
+#trip-name {
+  flex:1; background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
+  border-radius:6px; padding:5px 8px; color:#fff; font-size:11px; font-weight:600;
+  outline:none; placeholder-color:rgba(255,255,255,0.5);
+}
+#trip-name::placeholder { color:rgba(255,255,255,0.5); }
+#trip-name:focus { background:rgba(255,255,255,0.22); border-color:rgba(255,255,255,0.6); }
+
+.save-trip-btn {
+  padding:5px 10px; background:rgba(255,255,255,0.18); border:1px solid rgba(255,255,255,0.35);
+  border-radius:6px; color:#fff; font-size:10px; font-weight:700; cursor:pointer;
+  white-space:nowrap; transition:all 0.15s; letter-spacing:0.03em;
+}
+.save-trip-btn:hover { background:rgba(255,255,255,0.28); }
+
+#panel-scroll { flex:1; overflow-y:auto; padding:14px 16px; scrollbar-width:thin; scrollbar-color:#d3d1c7 transparent; }
+
+/* ── TABS ── */
+.tab-bar { display:flex; border:1px solid #d3d1c7; border-radius:9px; overflow:hidden; margin-bottom:13px; }
+.tab-btn { flex:1; padding:7px 0; font-size:11px; font-weight:600; border:none; cursor:pointer; background:#f5f5f0; color:#5f5e5a; transition:all 0.15s; }
+.tab-btn.active { background:#185FA5; color:#fff; }
+.tab-btn:not(:last-child) { border-right:1px solid #d3d1c7; }
+.tab-pane { display:none; }
+.tab-pane.active { display:block; }
+
+/* ── SECTIONS ── */
+.section { margin-bottom:12px; }
+.sec-title {
+  font-size:10px; font-weight:700; color:#5f5e5a; text-transform:uppercase;
+  letter-spacing:0.07em; margin-bottom:7px; display:flex; align-items:center; gap:6px;
+}
+.sec-title::after { content:''; flex:1; height:1px; background:#e8e7e0; }
+
+/* ── INPUTS ── */
+.input-row { display:flex; gap:6px; align-items:flex-start; margin-bottom:7px; }
+.input-label { font-size:10px; font-weight:700; color:#888780; min-width:42px; padding-top:8px; text-transform:uppercase; letter-spacing:0.04em; }
+
+.addr-wrap { flex:1; position:relative; }
+.addr-input {
+  width:100%; background:#f8f7f2; border:1px solid #d3d1c7; border-radius:8px;
+  padding:7px 10px; color:#1a1a18; font-size:12px; outline:none;
+  transition:border-color 0.2s, box-shadow 0.2s;
+}
+.addr-input:focus { border-color:#185FA5; box-shadow:0 0 0 3px rgba(24,95,165,0.1); background:#fff; }
+
+.autocomplete-list {
+  position:absolute; top:calc(100% + 3px); left:0; right:0; z-index:3000;
+  background:#fff; border:1px solid #d3d1c7; border-radius:8px;
+  box-shadow:0 4px 16px rgba(0,0,0,0.12); overflow:hidden; display:none; max-height:180px; overflow-y:auto;
+}
+.autocomplete-list.open { display:block; }
+.ac-item { padding:8px 10px; font-size:12px; color:#1a1a18; cursor:pointer; border-bottom:0.5px solid #f0efe8; display:flex; align-items:center; gap:7px; }
+.ac-item:last-child { border-bottom:none; }
+.ac-item:hover { background:#f0f6ff; }
+.ac-icon { font-size:13px; flex-shrink:0; }
+.ac-main { font-weight:500; }
+.ac-sub { font-size:10px; color:#888780; margin-top:1px; }
+
+.pin-btn {
+  width:30px; height:30px; flex-shrink:0; margin-top:3px;
+  background:#f8f7f2; border:1px solid #d3d1c7; border-radius:8px;
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+  font-size:14px; transition:all 0.15s;
+}
+.pin-btn:hover { border-color:#185FA5; background:#e6f1fb; }
+.pin-btn.active { border-color:#185FA5; background:#185FA5; }
+.wp-hint { font-size:9px; color:#1D9E75; margin:-4px 0 5px 48px; font-style:italic; min-height:12px; }
+
+/* ── STOP TOGGLE ── */
+/* Dynamic stops (v14) */
+.add-stop-btn {
+  display:flex; align-items:center; gap:6px; width:100%;
+  padding:7px 12px; background:#f0f6ff; border:1.5px dashed #185FA5;
+  border-radius:8px; color:#185FA5; font-size:11px; font-weight:700;
+  cursor:pointer; transition:all 0.15s; margin-bottom:4px;
+}
+.add-stop-btn:hover { background:#e0eeff; }
+.stop-row { margin-bottom:4px; }
+.stop-remove-btn {
+  width:24px; height:24px; flex-shrink:0; margin-top:5px;
+  background:#fff0f0; border:1px solid #fca5a5; border-radius:6px;
+  color:#ef4444; font-size:14px; font-weight:700; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:all 0.15s; line-height:1;
+}
+.stop-remove-btn:hover { background:#ef4444; color:#fff; border-color:#ef4444; }
+
+/* ── SLIDERS ── */
+.slider-block { margin-bottom:10px; }
+.slider-hdr { display:flex; justify-content:space-between; margin-bottom:4px; }
+.slider-lbl { font-size:11px; color:#5f5e5a; }
+.slider-val { font-size:12px; font-weight:700; color:#185FA5; }
+input[type=range] { width:100%; accent-color:#185FA5; cursor:pointer; height:4px; }
+
+/* ── CONNECTOR FILTERS ── */
+.conn-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-bottom:9px; }
+.conn-chip {
+  display:flex; align-items:center; gap:6px; padding:6px 8px;
+  background:#f8f7f2; border:1px solid #d3d1c7; border-radius:8px;
+  cursor:pointer; transition:all 0.12s; user-select:none;
+}
+.conn-chip:hover { border-color:#888780; }
+.conn-chip.on { border-color:#185FA5; background:#e6f1fb; }
+.conn-chip input { display:none; }
+.conn-dot { width:9px; height:9px; border-radius:2px; flex-shrink:0; }
+.conn-text { font-size:11px; font-weight:600; color:#1a1a18; }
+.conn-sub { font-size:9px; color:#888780; }
+
+/* ── NETWORK CHIPS ── */
+.net-wrap { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:9px; }
+.net-chip { padding:4px 9px; border-radius:12px; font-size:10px; font-weight:700; border:1px solid #d3d1c7; background:#f5f5f0; cursor:pointer; transition:all 0.12s; color:#5f5e5a; }
+.net-chip.on { color:#fff; border-color:transparent; }
+.net-ea.on    { background:#3b82f6; }
+.net-tesla.on { background:#ef4444; }
+.net-blink.on { background:#16a34a; }
+.net-cp.on    { background:#f97316; }
+.net-evgo.on  { background:#9333ea; }
+.net-gm.on    { background:#7c3aed; }
+.net-evc.on   { background:#0ea5e9; }
+.net-all.on   { background:#185FA5; }
+
+/* ── STATS BOX ── */
+.stats-box { background:#f8f7f2; border:1px solid #e8e7e0; border-radius:9px; padding:10px 12px; margin-bottom:10px; }
+.stat-row { display:flex; justify-content:space-between; font-size:11px; color:#888780; margin-bottom:4px; }
+.stat-row:last-child { margin-bottom:0; }
+.stat-v { font-weight:700; color:#1a1a18; }
+.stat-v.good { color:#1D9E75; }
+.stat-v.warn { color:#D85A30; }
+
+/* ── CHARGER LIST ── */
+#charger-list { max-height:220px; overflow-y:auto; }
+.ch-item {
+  padding:8px 10px; background:#f8f7f2; border:1px solid #e8e7e0;
+  border-radius:8px; margin-bottom:5px; cursor:pointer; transition:all 0.12s;
+}
+.ch-item:hover { border-color:#185FA5; background:#f0f6ff; }
+.ch-name { font-size:11px; font-weight:700; color:#1a1a18; margin-bottom:4px; display:flex; align-items:center; gap:5px; }
+.ch-tags { display:flex; gap:4px; flex-wrap:wrap; }
+.ct { font-size:9px; padding:2px 6px; border-radius:4px; font-weight:700; }
+.ct-kw  { background:rgba(24,95,165,0.1);  color:#185FA5; }
+.ct-net { background:rgba(124,58,237,0.1);  color:#7c3aed; }
+.ct-st  { background:rgba(29,158,117,0.1);  color:#1D9E75; }
+.ct-pr  { background:rgba(234,179,8,0.12);  color:#856800; }
+.ct-off { background:rgba(216,90,48,0.1);   color:#D85A30; }
+.ct-ok  { background:rgba(29,158,117,0.1);  color:#1D9E75; }
+.ct-bz  { background:rgba(216,90,48,0.1);   color:#D85A30; }
+.ct-gm  { background:rgba(124,58,237,0.1);  color:#7c3aed; }
+
+/* ── CALC BUTTON ── */
+.calc-btn {
+  display:block; width:100%; padding:10px 0; background:#185FA5; border:none;
+  border-radius:9px; font-size:13px; font-weight:700; color:#fff; cursor:pointer;
+  text-align:center; transition:all 0.15s; margin-bottom:7px; letter-spacing:0.02em;
+}
+.calc-btn:hover { background:#0f4a8a; transform:translateY(-1px); box-shadow:0 4px 14px rgba(24,95,165,0.35); }
+.calc-btn:disabled { opacity:0.5; cursor:not-allowed; transform:none; box-shadow:none; }
+
+/* ── STATUS ── */
+#status { font-size:10px; color:#888780; text-align:center; min-height:14px; margin-bottom:4px; }
+#status.err { color:#D85A30; font-weight:600; }
+#status.ok  { color:#1D9E75; font-weight:600; }
+
+/* ── RING STYLES ── */
+.ring-block { background:#f8f7f2; border-radius:9px; padding:8px 9px; margin-bottom:7px; border:1px solid #e8e7e0; }
+.ring-block.rt-block { border-color:#D85A30; background:#fef8f5; }
+.ring-hdr { display:flex; align-items:center; gap:7px; margin-bottom:7px; }
+.ring-hdr input[type=checkbox] { width:13px; height:13px; cursor:pointer; flex-shrink:0; }
+.ring-name { font-size:11px; font-weight:500; color:#1a1a18; flex:1; }
+.ring-badge { font-size:11px; font-weight:700; padding:2px 7px; border-radius:10px; color:#fff; white-space:nowrap; }
+.ring-prev { width:32px; height:12px; border-radius:3px; flex-shrink:0; border:0.5px solid rgba(0,0,0,0.1); }
+.style-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+.style-cell { display:flex; flex-direction:column; gap:3px; }
+.style-lbl { font-size:9px; color:#888780; text-transform:uppercase; letter-spacing:0.04em; }
+input[type=color] { width:100%; height:26px; border:1px solid #d3d1c7; border-radius:5px; padding:1px 2px; cursor:pointer; background:#fff; }
+.pat-row { display:flex; gap:3px; }
+.pat-btn { flex:1; height:26px; border:1px solid #d3d1c7; border-radius:5px; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+.pat-btn.active { border-color:#185FA5; background:#e6f1fb; }
+.pat-btn svg { width:22px; height:10px; }
+.ms { display:flex; align-items:center; gap:5px; }
+.ms input[type=range] { flex:1; height:3px; }
+.ms span { font-size:10px; font-weight:600; color:#185FA5; min-width:20px; text-align:right; }
+.fr { display:flex; align-items:center; gap:5px; }
+.fr input[type=range] { flex:1; height:3px; }
+.fr span { font-size:10px; font-weight:600; color:#185FA5; min-width:24px; text-align:right; }
+
+.charger-toggle { display:flex; border:1px solid #d3d1c7; border-radius:8px; overflow:hidden; margin-bottom:8px; }
+.charger-btn { flex:1; padding:6px 0; font-size:11px; font-weight:500; border:none; cursor:pointer; background:#f5f5f0; color:#5f5e5a; line-height:1.3; }
+.charger-btn.active { background:#185FA5; color:#fff; }
+.charger-btn:first-child { border-right:1px solid #d3d1c7; }
+.charger-stats { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-bottom:8px; }
+.cstat { background:#f5f5f0; border-radius:7px; padding:6px 8px; }
+.cstat-label { font-size:9px; color:#888780; }
+.cstat-val { font-size:12px; font-weight:600; color:#1a1a18; }
+.range-result { border-radius:8px; padding:9px 11px; margin-top:6px; background:#185FA5; color:#fff; }
+.rr-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px; }
+.rr-lbl { font-size:10px; opacity:0.85; }
+.rr-val { font-size:14px; font-weight:700; }
+.rr-sub { font-size:10px; opacity:0.7; text-align:right; margin-top:2px; }
+.city-list { max-height:160px; overflow-y:auto; }
+.city-item { display:flex; align-items:center; gap:7px; padding:3px 4px; border-radius:5px; font-size:11px; color:#3d3d3a; cursor:pointer; }
+.city-item:hover { background:#f0efe8; }
+.city-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.city-nm { flex:1; } .city-dist { color:#888780; font-size:10px; } .city-tag { font-size:10px; font-weight:500; }
+
+/* ── RESET / MISC ── */
+.reset-btn { display:block; width:100%; padding:7px 0; background:#f0efe8; border:1px solid #d3d1c7; border-radius:8px; font-size:11px; color:#5f5e5a; cursor:pointer; text-align:center; margin-top:6px; }
+.reset-btn:hover { background:#e0dfd8; }
+
+/* ── PICK BANNER ── */
+#pick-banner {
+  display:none; position:absolute; top:14px; left:50%; transform:translateX(-50%);
+  background:#185FA5; color:#fff; font-size:12px; font-weight:700;
+  padding:8px 18px; border-radius:20px; z-index:2000; pointer-events:none;
+  box-shadow:0 4px 14px rgba(24,95,165,0.4); white-space:nowrap;
+}
+
+/* ── SAVE MODAL ── */
+#save-modal {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5);
+  z-index:5000; align-items:center; justify-content:center;
+}
+#save-modal.open { display:flex; }
+.modal-box {
+  background:#fff; border-radius:14px; padding:24px 28px; width:340px;
+  box-shadow:0 8px 40px rgba(0,0,0,0.2);
+}
+.modal-title { font-size:15px; font-weight:700; color:#1a1a18; margin-bottom:6px; }
+.modal-sub { font-size:12px; color:#888780; margin-bottom:14px; }
+.modal-input {
+  width:100%; border:1px solid #d3d1c7; border-radius:8px; padding:9px 12px;
+  font-size:13px; color:#1a1a18; outline:none; margin-bottom:12px;
+}
+.modal-input:focus { border-color:#185FA5; box-shadow:0 0 0 3px rgba(24,95,165,0.1); }
+.modal-btns { display:flex; gap:8px; }
+.modal-cancel { flex:1; padding:9px 0; background:#f5f5f0; border:1px solid #d3d1c7; border-radius:8px; font-size:12px; font-weight:600; color:#5f5e5a; cursor:pointer; }
+.modal-save { flex:2; padding:9px 0; background:#185FA5; border:none; border-radius:8px; font-size:12px; font-weight:700; color:#fff; cursor:pointer; }
+.modal-save:hover { background:#0f4a8a; }
+
+/* ── POPUP ── */
+.dark-popup .leaflet-popup-content-wrapper { background:#1a2235 !important; border-radius:10px !important; box-shadow:0 4px 20px rgba(0,0,0,0.35) !important; }
+.dark-popup .leaflet-popup-content { color:#e8eaf0; font-size:11px; font-family:-apple-system,sans-serif; margin:10px 13px; }
+.dark-popup .leaflet-popup-tip { background:#1a2235 !important; }
+.dark-popup .leaflet-popup-close-button { color:#8899aa !important; }
+
+/* ── LEAFLET ZOOM ── */
+.leaflet-control-zoom { border:none !important; box-shadow:0 2px 12px rgba(0,0,0,0.18) !important; border-radius:10px !important; overflow:hidden; }
+.leaflet-control-zoom-in,.leaflet-control-zoom-out { width:36px !important; height:36px !important; line-height:36px !important; font-size:20px !important; font-weight:400 !important; color:#1a1a18 !important; background:rgba(255,255,255,0.97) !important; border:none !important; border-bottom:0.5px solid #e8e7e0 !important; }
+.leaflet-control-zoom-out { border-bottom:none !important; }
+.leaflet-control-zoom-in:hover,.leaflet-control-zoom-out:hover { background:#f0efe8 !important; color:#185FA5 !important; }
+
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:#d3d1c7; border-radius:2px; }
+
+/* ── LEG BATTERY CARDS (v12) ── */
+#leg-cards { margin-bottom:10px; }
+.leg-card {
+  background:#f8f7f2; border:1px solid #d3d1c7; border-radius:10px;
+  padding:10px 12px; margin-bottom:8px; position:relative;
+}
+.leg-card-title {
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.07em;
+  color:#185FA5; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;
+}
+.leg-dist-badge {
+  font-size:11px; font-weight:700; color:#1a1a18; background:#e6f1fb;
+  padding:2px 8px; border-radius:8px; letter-spacing:0;
+}
+.leg-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
+.leg-lbl { font-size:11px; color:#5f5e5a; }
+.leg-val { font-size:11px; font-weight:700; color:#1a1a18; text-align:right; }
+.leg-val.danger { color:#ef4444; }
+.leg-val.warn   { color:#f97316; }
+.leg-val.good   { color:#1D9E75; }
+
+/* battery bar */
+.batt-bar-wrap { margin:6px 0 4px; position:relative; height:14px; background:#e8e7e0; border-radius:7px; overflow:hidden; }
+.batt-bar-fill { position:absolute; top:0; left:0; height:100%; border-radius:7px; transition:width 0.4s; }
+.batt-bar-arrive { background:#ef4444; }
+.batt-bar-depart { background:#1D9E75; }
+.batt-bar-danger { background:#ef4444 !important; }
+
+/* charge target row */
+.charge-target-row { display:flex; align-items:center; gap:6px; margin-top:6px; padding-top:6px; border-top:1px solid #e8e7e0; }
+.charge-target-lbl { font-size:10px; color:#888780; flex-shrink:0; }
+.charge-target-input { width:52px; font-size:12px; font-weight:700; border:1px solid #d3d1c7; border-radius:6px; padding:3px 6px; color:#185FA5; background:#fff; text-align:center; }
+.charge-target-info { font-size:10px; color:#1D9E75; font-weight:600; }
+.charge-time-badge { font-size:10px; font-weight:700; background:#185FA5; color:#fff; padding:2px 7px; border-radius:6px; white-space:nowrap; }
+.depart-pct { font-size:11px; font-weight:700; color:#1D9E75; }
+
+.leg-section-title {
+  font-size:10px; font-weight:700; color:#5f5e5a; text-transform:uppercase;
+  letter-spacing:0.07em; margin-bottom:6px; display:flex; align-items:center; gap:6px;
+}
+.leg-section-title::after { content:''; flex:1; height:1px; background:#e8e7e0; }
+
+/* depart % editable for leg 0 */
+.depart-edit-row { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+.depart-edit-lbl { font-size:10px; color:#888780; }
+.depart-edit-input { width:52px; font-size:12px; font-weight:700; border:1px solid #d3d1c7; border-radius:6px; padding:3px 6px; color:#185FA5; background:#fff; text-align:center; }
+
+/* ── STOP RANGE RINGS (v13) ── */
+.stop-ring-legend {
+  display:flex; gap:8px; flex-wrap:wrap; margin-top:5px; margin-bottom:3px;
+}
+.stop-ring-pill {
+  display:flex; align-items:center; gap:4px; font-size:9px; font-weight:600;
+  padding:2px 7px; border-radius:10px; border:1px solid;
+}
+
+/* ── MAP CONTROLS (v16) ── */
+/* map controls now in header */
+
+/* ── v3 ADDITIONS ── */
+
+/* Panel always visible — never collapses to nothing */
+#panel.collapsed { transform: translateX(calc(-100% - 20px)); pointer-events:none; }
+
+/* Favorites dropdown */
+.fav-btn {
+  width:28px; height:28px; flex-shrink:0; margin-top:3px;
+  background:#fff8e6; border:1px solid #f59e0b; border-radius:7px;
+  color:#f59e0b; font-size:14px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:all 0.15s; position:relative;
+}
+.fav-btn:hover { background:#fef3c7; }
+
+.fav-dropdown {
+  position:absolute; top:calc(100% + 4px); left:0; right:0;
+  background:#fff; border:1px solid #d3d1c7; border-radius:10px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.15); z-index:3000;
+  overflow:hidden; display:none; min-width:220px;
+}
+.fav-dropdown.open { display:block; }
+.fav-item {
+  padding:9px 12px; font-size:12px; color:#1a1a18; cursor:pointer;
+  display:flex; align-items:center; gap:8px; border-bottom:0.5px solid #f0efe8;
+  transition:background 0.1s;
+}
+.fav-item:last-child { border-bottom:none; }
+.fav-item:hover { background:#f0f6ff; }
+.fav-item-icon { font-size:14px; flex-shrink:0; }
+.fav-item-name { font-weight:600; flex:1; }
+.fav-item-addr { font-size:10px; color:#888780; margin-top:1px; }
+.fav-delete { font-size:11px; color:#ef4444; padding:2px 6px; cursor:pointer; }
+.fav-save-row {
+  padding:8px 12px; background:#f8f7f2; border-top:1px solid #e8e7e0;
+  display:flex; gap:6px; align-items:center;
+}
+.fav-save-input {
+  flex:1; border:1px solid #d3d1c7; border-radius:6px; padding:5px 8px;
+  font-size:11px; outline:none;
+}
+.fav-save-input:focus { border-color:#185FA5; }
+.fav-save-btn {
+  padding:5px 10px; background:#185FA5; border:none; border-radius:6px;
+  color:#fff; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;
+}
+
+/* My Trips panel */
+#trips-modal {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5);
+  z-index:5000; align-items:flex-start; justify-content:center;
+  padding-top:60px;
+}
+#trips-modal.open { display:flex; }
+.trips-box {
+  background:#fff; border-radius:14px; width:340px; max-height:70vh;
+  box-shadow:0 8px 40px rgba(0,0,0,0.25); display:flex; flex-direction:column;
+  overflow:hidden;
+}
+.trips-header {
+  padding:14px 16px; background:linear-gradient(135deg,#0d2340,#185FA5);
+  color:#fff; display:flex; justify-content:space-between; align-items:center;
+  flex-shrink:0;
+}
+.trips-title { font-size:14px; font-weight:700; }
+.trips-close { background:none; border:none; color:#fff; font-size:20px; cursor:pointer; }
+.trips-list { flex:1; overflow-y:auto; padding:8px; }
+.trip-item {
+  padding:10px 12px; background:#f8f7f2; border:1px solid #e8e7e0;
+  border-radius:9px; margin-bottom:6px; cursor:pointer; transition:all 0.15s;
+}
+.trip-item:hover { border-color:#185FA5; background:#f0f6ff; }
+.trip-item-name { font-size:13px; font-weight:700; color:#1a1a18; margin-bottom:3px; }
+.trip-item-meta { font-size:10px; color:#888780; }
+.trip-item-actions { display:flex; gap:6px; margin-top:6px; }
+.trip-load-btn {
+  flex:1; padding:5px; background:#185FA5; border:none; border-radius:6px;
+  color:#fff; font-size:11px; font-weight:700; cursor:pointer;
+}
+.trip-delete-btn {
+  padding:5px 10px; background:#fff0f0; border:1px solid #fca5a5;
+  border-radius:6px; color:#ef4444; font-size:11px; font-weight:700; cursor:pointer;
+}
+.trips-empty { padding:24px; text-align:center; color:#888780; font-size:12px; }
+.trips-footer { padding:10px 12px; border-top:1px solid #e8e7e0; flex-shrink:0; }
+.trips-save-current {
+  width:100%; padding:9px; background:#1D9E75; border:none; border-radius:8px;
+  color:#fff; font-size:12px; font-weight:700; cursor:pointer;
+}
+.trips-save-current:hover { background:#0F6E56; }
+
+/* Charger popup extra buttons */
+.popup-btn-row { display:flex; gap:5px; margin-top:7px; flex-wrap:wrap; }
+.popup-btn {
+  flex:1; min-width:70px; padding:6px 4px; border-radius:7px; border:none;
+  font-size:10px; font-weight:700; cursor:pointer; text-align:center;
+  text-decoration:none; display:flex; align-items:center; justify-content:center;
+  gap:3px; transition:all 0.15s;
+}
+.popup-btn-stop { background:#185FA5; color:#fff; }
+.popup-btn-copy { background:#f0efe8; color:#1a1a18; border:1px solid #d3d1c7; }
+.popup-btn-ps   { background:#1e6fff; color:#fff; }
+.popup-btn-maps { background:#34a853; color:#fff; }
+
+/* kW snap buttons */
+.kw-snap {
+  padding:4px 9px; font-size:10px; font-weight:700; border-radius:6px;
+  border:1.5px solid #d3d1c7; background:#f5f5f0; color:#888780;
+  cursor:pointer; transition:all 0.12s; white-space:nowrap;
+}
+.kw-snap.active {
+  border-color:#185FA5; background:#e6f1fb; color:#185FA5;
+}
+.kw-snap:hover { border-color:#185FA5; color:#185FA5; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="pick-banner">📍 Click map to place — Esc to cancel</div>
+
+<!-- My Trips Modal -->
+<div id="trips-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:5000;align-items:flex-start;justify-content:center;padding-top:80px;">
+  <div class="trips-box">
+    <div class="trips-header">
+      <span class="trips-title">📂 My Saved Trips</span>
+      <button class="trips-close" onclick="closeTripsModal()">×</button>
+    </div>
+    <div class="trips-list" id="trips-list"></div>
+    <div class="trips-footer">
+      <button class="trips-save-current" onclick="saveCurrentTrip()">💾 Save Current Trip</button>
+    </div>
+  </div>
+</div>
+
+<!-- Panel collapse/expand button -->
+<button id="panel-toggle" class="open" onclick="togglePanel()" title="Hide/show panel">‹</button>
+
+<!-- map controls moved to header -->
+
+<!-- SAVE MODAL -->
+<div id="save-modal">
+  <div class="modal-box">
+    <div class="modal-title">💾 Save Trip File</div>
+    <div class="modal-sub">Name this trip — it downloads as an HTML file you can reopen and modify anytime.</div>
+    <input class="modal-input" type="text" id="modal-name" placeholder="e.g. Roswell to Charlotte May 2026" maxlength="60">
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="closeModal()">Cancel</button>
+      <button class="modal-save" onclick="doSave()">⬇️ Download Trip File</button>
+    </div>
+  </div>
+</div>
+
+<div id="panel">
+  <div id="panel-header">
+    <div class="panel-title">⚡ EV Trip Planner <span>v5.4 · ev4dummies.com · 2023 IONIQ 5 AWD</span>
+      <span style="margin-left:auto;font-size:9px;background:rgba(29,158,117,0.3);color:#1D9E75;padding:2px 6px;border-radius:4px;font-weight:700;letter-spacing:0.03em;">✅ NREL LIVE</span>
+    </div>
+    <div class="trip-name-row">
+      <input type="text" id="trip-name" placeholder="Trip name (e.g. Charlotte weekend)" style="flex:1;">
+      <button class="save-trip-btn" onclick="saveCurrentTrip()" style="white-space:nowrap;">💾 Save</button>
+      <button class="save-trip-btn" onclick="openTripsModal()" style="white-space:nowrap;background:rgba(29,158,117,0.4);">📂 Trips</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:7px;">
+      <button id="sat-btn" onclick="toggleSatellite()"
+        style="flex:1;padding:5px 8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.35);border-radius:7px;color:#fff;font-size:10px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;transition:all 0.15s;">
+        🛰️ Satellite
+      </button>
+      <button id="trip-btn" onclick="toggleTripMode()"
+        style="flex:1;padding:5px 8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.35);border-radius:7px;color:#fff;font-size:10px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;transition:all 0.15s;">
+        🗺️ Trip Mode
+      </button>
+    </div>
+  </div>
+
+  <div id="panel-scroll">
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('route')">🗺️ Route Planner</button>
+      <button class="tab-btn" onclick="switchTab('rings')">📍 Range Rings</button>
+    </div>
+
+    <!-- ════════════════════════════════════ -->
+    <!-- TAB: ROUTE PLANNER                  -->
+    <!-- ════════════════════════════════════ -->
+    <div class="tab-pane active" id="tab-route">
+
+      <div class="section">
+        <div class="sec-title">Route</div>
+        <div class="input-row">
+          <div class="input-label">Start</div>
+          <div class="addr-wrap">
+            <input class="addr-input" type="text" id="inp-start" placeholder="ZIP, address, city, business…" autocomplete="off" oninput="acSearch(this,'ac-start')" onblur="delayHide('ac-start')">
+            <div class="autocomplete-list" id="ac-start"></div>
+          </div>
+          <button class="pin-btn" id="pin-start" title="Click map" onclick="activatePick('start')">📍</button>
+          <button class="fav-btn" title="Saved places — tap to use or save this address" onclick="toggleFavDropdown('start',this)" style="width:auto;padding:0 8px;font-size:10px;gap:3px;">⭐ <span style="font-size:9px;font-weight:700;">SAVED</span></button>
+          <div class="fav-dropdown" id="fav-start"></div>
+        </div>
+        <div class="wp-hint" id="hint-start"></div>
+
+        <div class="input-row">
+          <div class="input-label">End</div>
+          <div class="addr-wrap">
+            <input class="addr-input" type="text" id="inp-end" placeholder="ZIP, address, city, business…" autocomplete="off" oninput="acSearch(this,'ac-end')" onblur="delayHide('ac-end')">
+            <div class="autocomplete-list" id="ac-end"></div>
+          </div>
+          <button class="pin-btn" id="pin-end" title="Click map" onclick="activatePick('end')">📍</button>
+          <button class="fav-btn" title="Saved places — tap to use or save this address" onclick="toggleFavDropdown('end',this)" style="width:auto;padding:0 8px;font-size:10px;gap:3px;">⭐ <span style="font-size:9px;font-weight:700;">SAVED</span></button>
+          <div class="fav-dropdown" id="fav-end"></div>
+        </div>
+        <div class="wp-hint" id="hint-end"></div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Charge Stops</div>
+        <div id="stops-container">
+          <!-- Stop rows injected dynamically by JS -->
+        </div>
+        <button class="add-stop-btn" onclick="addStop()">
+          <span style="font-size:16px;line-height:1;">+</span> Add Charge Stop
+        </button>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">⚡ Min Charger Power</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;" id="kw-snap-btns">
+          <button class="kw-snap active" data-kw="0" onclick="setMinKwSnap(0)">Any</button>
+          <button class="kw-snap" data-kw="50" onclick="setMinKwSnap(50)">50kW</button>
+          <button class="kw-snap" data-kw="80" onclick="setMinKwSnap(80)">80kW</button>
+          <button class="kw-snap" data-kw="100" onclick="setMinKwSnap(100)">100kW</button>
+          <button class="kw-snap" data-kw="150" onclick="setMinKwSnap(150)">150kW</button>
+          <button class="kw-snap" data-kw="180" onclick="setMinKwSnap(180)">180kW</button>
+          <button class="kw-snap" data-kw="200" onclick="setMinKwSnap(200)">200kW</button>
+          <button class="kw-snap" data-kw="250" onclick="setMinKwSnap(250)">250kW</button>
+          <button class="kw-snap" data-kw="300" onclick="setMinKwSnap(300)">300kW</button>
+          <button class="kw-snap" data-kw="350" onclick="setMinKwSnap(350)">350kW+</button>
+          <button class="kw-snap" data-kw="400" onclick="setMinKwSnap(400)">400kW MB</button>
+        </div>
+        <div style="font-size:9px;color:#888780;margin-top:5px;" id="kw-tier-lbl">Showing all charger speeds</div>
+        <input type="hidden" id="sl-minkw" value="0">
+      </div>
+
+      <div class="section">
+        <div class="sec-title">🔢 Minimum Stalls</div>
+        <div class="slider-block">
+          <div class="slider-hdr">
+            <span class="slider-lbl" id="stall-tier-lbl">Show all sizes</span>
+            <span class="slider-val" id="val-minstalls">1 stall</span>
+          </div>
+          <input type="range" id="sl-minstalls" min="1" max="20" step="1" value="1"
+            oninput="onMinStalls(this.value)" style="accent-color:#185FA5;">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:#888780;margin-top:2px;">
+            <span>1 (any)</span><span>5</span><span>10</span><span>20+</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Charger Search Corridor</div>
+        <div class="slider-block">
+          <div class="slider-hdr">
+            <span class="slider-lbl">Distance off route</span>
+            <span class="slider-val" id="val-corridor">25 mi</span>
+          </div>
+          <input type="range" id="sl-corridor" min="1" max="50" step="1" value="25" oninput="onCorridor(this.value)">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:#888780;margin-top:2px;"><span>1 mi tight</span><span>25 mi</span><span>50 mi wide</span></div>
+        </div>
+        <div style="font-size:9px;color:#888780;line-height:1.5;">🟠 Orange ring = off main corridor = likely less occupied. Wider search finds value chargers.</div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Max Price ($/kWh)</div>
+        <div class="slider-block">
+          <div class="slider-hdr">
+            <span class="slider-lbl">Hide chargers above</span>
+            <span class="slider-val" id="val-maxprice">$0.55/kWh</span>
+          </div>
+          <input type="range" id="sl-maxprice" min="0.10" max="1.00" step="0.01" value="0.55" oninput="onMaxPrice(this.value)">
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">⚡ Charging Speed Legend</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:10px;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <div style="width:14px;height:14px;border-radius:50%;background:#9ca3af;flex-shrink:0;"></div>
+            <span>≤50kW — Slow DC</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;flex-shrink:0;"></div>
+            <span>51–100kW ⚡</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <div style="width:14px;height:14px;border-radius:50%;background:#0891b2;flex-shrink:0;"></div>
+            <span>101–150kW ⚡⚡</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <div style="width:14px;height:14px;border-radius:50%;background:#16a34a;flex-shrink:0;"></div>
+            <span>151–250kW ⚡⚡</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <div style="width:14px;height:14px;border-radius:50%;background:#f97316;flex-shrink:0;"></div>
+            <span>251–350kW ⚡+</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <div style="width:14px;height:14px;border-radius:50%;background:#dc2626;flex-shrink:0;"></div>
+            <span>350kW+ ⚡++ MB/EA</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Connector Types</div>
+        <div class="conn-grid">
+          <label class="conn-chip on" id="cc-ccs">
+            <input type="checkbox" checked onchange="toggleConn('ccs',this)">
+            <div class="conn-dot" style="background:#3b82f6"></div>
+            <div><div class="conn-text">CCS / SAE</div><div class="conn-sub">DC Fast up to 350kW</div></div>
+          </label>
+          <label class="conn-chip on" id="cc-nacs">
+            <input type="checkbox" checked onchange="toggleConn('nacs',this)">
+            <div class="conn-dot" style="background:#ef4444"></div>
+            <div><div class="conn-text">NACS</div><div class="conn-sub">Tesla Supercharger</div></div>
+          </label>
+          <label class="conn-chip on" id="cc-j1772">
+            <input type="checkbox" checked onchange="toggleConn('j1772',this)">
+            <div class="conn-dot" style="background:#eab308"></div>
+            <div><div class="conn-text">J1772</div><div class="conn-sub">Level 2 AC</div></div>
+          </label>
+          <label class="conn-chip" id="cc-chademo">
+            <input type="checkbox" onchange="toggleConn('chademo',this)">
+            <div class="conn-dot" style="background:#22c55e"></div>
+            <div><div class="conn-text">CHAdeMO</div><div class="conn-sub">Legacy DC</div></div>
+          </label>
+          <label class="conn-chip on" id="cc-gm">
+            <input type="checkbox" checked onchange="toggleConn('gm',this)">
+            <div class="conn-dot" style="background:#9333ea"></div>
+            <div><div class="conn-text">GM Ultium</div><div class="conn-sub">Blink · EVgo</div></div>
+          </label>
+          <label class="conn-chip" id="cc-l2">
+            <input type="checkbox" onchange="toggleConn('l2',this)">
+            <div class="conn-dot" style="background:#f97316"></div>
+            <div><div class="conn-text">L2 Only</div><div class="conn-sub">Destination slow</div></div>
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Networks</div>
+        <div class="net-wrap">
+          <div class="net-chip net-all on" onclick="toggleAllNets(this)">All</div>
+          <div class="net-chip net-ea on"    onclick="toggleNet(this,'ea')">Electrify America</div>
+          <div class="net-chip net-tesla on" onclick="toggleNet(this,'tesla')">Tesla</div>
+          <div class="net-chip net-blink on" onclick="toggleNet(this,'blink')">Blink</div>
+          <div class="net-chip net-cp on"    onclick="toggleNet(this,'cp')">ChargePoint</div>
+          <div class="net-chip net-evgo on"  onclick="toggleNet(this,'evgo')">EVgo</div>
+          <div class="net-chip net-gm on"    onclick="toggleNet(this,'gm')">GM Energy</div>
+          <div class="net-chip net-evc on"   onclick="toggleNet(this,'evc')">EV Connect</div>
+          <div class="net-chip net-mb on"    onclick="toggleNet(this,'mb')" style="background:rgba(37,99,235,0.12);color:#1d4ed8;border-color:#1d4ed8;">Mercedes</div>
+          <div class="net-chip net-rivian on" onclick="toggleNet(this,'rivian')" style="background:rgba(5,150,105,0.12);color:#059669;border-color:#059669;">Rivian</div>
+          <div class="net-chip net-ford on"  onclick="toggleNet(this,'ford')" style="background:rgba(29,78,216,0.12);color:#1e40af;border-color:#1e40af;">Ford</div>
+          <div class="net-chip net-shell on" onclick="toggleNet(this,'shell')" style="background:rgba(234,179,8,0.12);color:#b45309;border-color:#b45309;">Shell/Volta</div>
+          <div class="net-chip net-nn on"    onclick="toggleNet(this,'nn')" style="background:rgba(107,114,128,0.12);color:#6b7280;border-color:#6b7280;">Other</div>
+        </div>
+      </div>
+
+
+      <div class="section" id="leg-section" style="display:none;">
+        <div class="leg-section-title">Trip Legs &amp; Battery State</div>
+        <div id="leg-cards"></div>
+      </div>
+
+      <div class="section" id="stop-ring-legend-section" style="display:none;">
+        <div class="sec-title">Stop Range Rings</div>
+        <div id="stop-ring-legend" class="stop-ring-legend"></div>
+        <div style="font-size:9px;color:#888780;margin-top:3px;line-height:1.5;">
+          Rings show how far you can reach from each stop at departure charge. Adjust "Charge to %" in each leg card to resize rings live.
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Range Analysis</div>
+        <div class="stats-box">
+          <div class="stat-row"><span>Summer usable (80% SOC)</span><span class="stat-v" id="st-usable">—</span></div>
+          <div class="stat-row"><span>Effective (−15% buffer)</span><span class="stat-v" id="st-effective">—</span></div>
+          <div class="stat-row"><span>Trip distance</span><span class="stat-v" id="st-dist">—</span></div>
+          <div class="stat-row"><span>Min stops needed</span><span class="stat-v" id="st-stops">—</span></div>
+          <div class="stat-row"><span>Avg $/kWh on route</span><span class="stat-v" id="st-price">—</span></div>
+          <div class="stat-row"><span>Chargers found</span><span class="stat-v" id="st-count">—</span></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Chargers Along Route <span id="charger-count-badge" style="font-size:9px;font-weight:400;text-transform:none;color:#888780;margin-left:4px;"></span></div>
+        <div id="charger-list"><div style="font-size:11px;color:#888780;text-align:center;padding:18px;">Enter route and click Calculate ↓</div></div>
+      </div>
+
+      <button class="calc-btn" id="calc-btn" onclick="calcRoute()">⚡ CALCULATE ROUTE</button>
+      <div id="status"></div>
+      <button class="reset-btn" onclick="resetView()">Reset map to Roswell, GA</button>
+    </div>
+
+    <!-- ════════════════════════════════════ -->
+    <!-- TAB: RANGE RINGS                    -->
+    <!-- ════════════════════════════════════ -->
+    <div class="tab-pane" id="tab-rings">
+
+      <div class="section">
+        <div class="sec-title">Real-World Range Baseline</div>
+        <div style="font-size:9px;color:#888780;margin-bottom:8px;font-style:italic;">EPA is 266mi — dial in what you're actually seeing</div>
+        <div class="slider-block">
+          <div class="slider-hdr"><span class="slider-lbl">☀️ Summer range</span><span class="slider-val" id="lbl-summer">255 mi</span></div>
+          <input type="range" id="sl-summer" min="180" max="310" step="5" value="255" oninput="onRangeChange()" style="accent-color:#1D9E75;">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:#888780;margin-top:1px;"><span>180</span><span>EPA 266</span><span>310</span></div>
+        </div>
+        <div class="slider-block">
+          <div class="slider-hdr"><span class="slider-lbl">❄️ Winter range</span><span class="slider-val" id="lbl-winter">195 mi</span></div>
+          <input type="range" id="sl-winter" min="100" max="260" step="5" value="195" oninput="onRangeChange()" style="accent-color:#378ADD;">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:#888780;margin-top:1px;"><span>100</span><span>180</span><span>260</span></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">One-Way Rings</div>
+        <div id="ring-blocks-ow"></div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Round-Trip Rings</div>
+        <div style="font-size:9px;color:#888780;margin-bottom:7px;font-style:italic;">Half range = farthest you can go and return same day</div>
+        <div id="ring-blocks-rt"></div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Charger Stop Calculator</div>
+        <div class="charger-toggle">
+          <button class="charger-btn active" id="btn-sc" onclick="setCharger('sc')">DC Fast Charge<br><span style="font-size:9px;opacity:0.8;">800V CCS · up to 235kW</span></button>
+          <button class="charger-btn" id="btn-l2" onclick="setCharger('l2')">Level 2<br><span style="font-size:9px;opacity:0.8;">10.9kW onboard max</span></button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+          <div class="cstat"><div class="cstat-label">DC fast kW</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:2px;">
+              <input type="number" id="kw-sc" value="180" min="10" max="350" step="5" oninput="onKwChange('sc',this.value)" style="width:56px;font-size:13px;font-weight:600;border:1px solid #185FA5;border-radius:5px;padding:3px 5px;color:#1a1a18;background:#fff;">
+              <span style="font-size:11px;color:#888780;">kW</span>
+            </div>
+          </div>
+          <div class="cstat"><div class="cstat-label">Level 2 kW</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:2px;">
+              <input type="number" id="kw-l2" value="10.9" min="1" max="19.2" step="0.4" oninput="onKwChange('l2',this.value)" style="width:56px;font-size:13px;font-weight:600;border:1px solid #d3d1c7;border-radius:5px;padding:3px 5px;color:#1a1a18;background:#fff;">
+              <span style="font-size:11px;color:#888780;">kW</span>
+            </div>
+          </div>
+        </div>
+        <div class="charger-stats">
+          <div class="cstat"><div class="cstat-label">mi / min</div><div class="cstat-val" id="stat-rate">—</div></div>
+          <div class="cstat"><div class="cstat-label">10–80% time</div><div class="cstat-val" id="stat-full">—</div></div>
+          <div class="cstat"><div class="cstat-label">Per 10 min</div><div class="cstat-val" id="stat-10">—</div></div>
+          <div class="cstat"><div class="cstat-label">Per 30 min</div><div class="cstat-val" id="stat-30">—</div></div>
+        </div>
+        <div class="slider-block">
+          <div class="slider-hdr"><span class="slider-lbl">Stop duration</span><span class="slider-val" id="lbl-time">14 min</span></div>
+          <input type="range" id="sl-time" min="5" max="60" step="1" value="14" oninput="update()" style="accent-color:#185FA5;">
+        </div>
+        <div class="range-result">
+          <div class="rr-row"><span class="rr-lbl">Miles added at stop</span><span class="rr-val" id="res-added">—</span></div>
+          <div class="rr-row"><span class="rr-lbl">Summer 1-stop one-way</span><span class="rr-val" id="res-summer">—</span></div>
+          <div class="rr-row"><span class="rr-lbl">Winter 1-stop one-way</span><span class="rr-val" id="res-winter">—</span></div>
+          <div class="rr-sub" id="res-note">DC Fast · 14 min</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Destinations</div>
+        <div class="city-list" id="city-list"></div>
+      </div>
+
+      <button class="reset-btn" onclick="resetView()">Reset map to Roswell, GA</button>
+    </div>
+
+  </div><!-- /panel-scroll -->
+</div><!-- /panel -->
+
+<script>
+// ═══════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════
+const RLAT=34.023, RLNG=-84.3616, MI=1609.344;
+const MI_PER_KWH=2.9, BATTERY_KWH=77.4;
+let BASE_SUMMER=255, BASE_WINTER=195;
+let chargerKw={sc:180,l2:10.9}, chargerMode='sc';
+
+// ═══════════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════════
+// ── MAPBOX GL JS ──
+mapboxgl.accessToken = 'pk.eyJ1IjoicnphcHB1bGxhIiwiYSI6ImNtbmxxd201MTFiZWIycXB1d3A5cHg2em0ifQ.i6aVFwUHuYkiwVi6ECdy9A';
+const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/streets-v12',
+  center: [RLNG, RLAT],
+  zoom: 6.5,
+  attributionControl: false,
+});
+map.addControl(new mapboxgl.NavigationControl({showCompass:false}), 'bottom-right');
+map.addControl(new mapboxgl.AttributionControl({compact:true}), 'bottom-right');
+
+// Storage for Mapbox GL markers/sources
+const mbMarkers = {};
+let chargerMarkersArr = [];
+let satActive = false;
+let mapLoaded = false;
+
+map.on('load', function(){
+  mapLoaded = true;
+  // Route source + layer
+  map.addSource('route-src', {type:'geojson', data:{type:'Feature',geometry:{type:'LineString',coordinates:[]}}});
+  map.addLayer({id:'route-line', type:'line', source:'route-src',
+    layout:{'line-cap':'round','line-join':'round'},
+    paint:{'line-color':'#185FA5','line-width':5,'line-opacity':0.85}});
+  // Ring layers added dynamically — initialize source placeholders
+  RINGS.forEach(r=>{
+    map.addSource('ring-'+r.key, {type:'geojson', data:{type:'Feature',geometry:{type:'Point',coordinates:[RLNG,RLAT]}}});
+  });
+  initHomeMarker();
+  initCityMarkers();
+  redrawRings();
+});
+
+function readdSourcesAfterStyleChange(){
+  if(!map.getSource('route-src')){
+    map.addSource('route-src', {type:'geojson', data:{type:'Feature',geometry:{type:'LineString',coordinates:[]}}});
+    map.addLayer({id:'route-line',type:'line',source:'route-src',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#185FA5','line-width':5,'line-opacity':0.85}});
+  }
+  if(RT.routeCoords && RT.routeCoords.length) drawRoute(RT.routeCoords);
+  redrawRings();
+  // Re-plot chargers
+  if(RT.chargerData && RT.chargerData.length) plotChargers(RT.chargerData);
+}
+
+function toggleSatellite(){
+  const btn = document.getElementById('sat-btn');
+  if(!satActive){
+    map.setStyle('mapbox://styles/mapbox/satellite-streets-v12');
+    btn.style.background = 'rgba(255,255,255,0.35)';
+    btn.textContent = '🗺️ Street Map';
+    satActive = true;
+  } else {
+    map.setStyle('mapbox://styles/mapbox/streets-v12');
+    btn.style.background = 'rgba(255,255,255,0.15)';
+    btn.innerHTML = '🛰️ Satellite';
+    satActive = false;
+  }
+  map.once('style.load', readdSourcesAfterStyleChange);
+}
+
+// ── TRIP MODE — show only s0 (summer one-way) + w0 (winter one-way) ──
+let tripModeActive = false;
+const TRIP_MODE_HIDE = ['s1','w1','rs','rw']; // hide 1-stop and RT rings
+const TRIP_MODE_KEEP = ['s0','w0'];            // keep one-way rings only
+
+function toggleTripMode(){
+  const btn = document.getElementById('trip-btn');
+  tripModeActive = !tripModeActive;
+
+  if(tripModeActive){
+    // Save current visibility states
+    RINGS.forEach(r => { ringStyle[r.key]._savedVisible = ringStyle[r.key].visible; });
+    // Hide all except s0 and w0
+    TRIP_MODE_HIDE.forEach(key => {
+      ringStyle[key].visible = false;
+      const chk = document.getElementById('chk-'+key);
+      if(chk) chk.checked = false;
+    });
+    TRIP_MODE_KEEP.forEach(key => {
+      ringStyle[key].visible = true;
+      const chk = document.getElementById('chk-'+key);
+      if(chk) chk.checked = true;
+    });
+    btn.style.background = 'rgba(29,158,117,0.5)';
+    btn.innerHTML = '✅ Trip Mode ON';
+    btn.title = 'Click to restore all rings';
+  } else {
+    // Restore saved visibility states
+    RINGS.forEach(r => {
+      const saved = ringStyle[r.key]._savedVisible;
+      ringStyle[r.key].visible = (saved !== undefined) ? saved : ringStyle[r.key].visible;
+      const chk = document.getElementById('chk-'+r.key);
+      if(chk) chk.checked = ringStyle[r.key].visible;
+    });
+    btn.style.background = 'rgba(255,255,255,0.15)';
+    btn.innerHTML = '🗺️ Trip Mode';
+    btn.title = 'Show only one-way rings for clean route planning';
+  }
+  redrawRings();
+}
+
+// Mapbox GL helper — create a colored dot element
+function mkDotEl(color, shape, sz=14){
+  const el = document.createElement('div');
+  el.style.cssText = `width:${sz}px;height:${sz}px;border-radius:${shape==='sq'?'3px':'50%'};background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.4);cursor:pointer;`;
+  return el;
+}
+function mkMbMarker(lat, lng, color, shape='circle', sz=14){
+  return new mapboxgl.Marker({element:mkDotEl(color,shape,sz)}).setLngLat([lng,lat]);
+}
+
+function initHomeMarker(){
+  const el = document.createElement('div');
+  el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="44" viewBox="0 0 40 44">
+    <ellipse cx="20" cy="42" rx="8" ry="3" fill="rgba(0,0,0,0.25)"/>
+    <rect x="8" y="22" width="24" height="18" rx="2" fill="#f5e6c8" stroke="#c8a882" stroke-width="1"/>
+    <polygon points="4,23 20,8 36,23" fill="#dc2626" stroke="#b91c1c" stroke-width="1.5"/>
+    <rect x="26" y="10" width="5" height="9" fill="#6b7280"/>
+    <rect x="15" y="29" width="10" height="11" rx="2" fill="#f97316"/>
+    <circle cx="23.5" cy="35" r="1" fill="#92400e"/>
+    <rect x="9" y="25" width="7" height="6" rx="1" fill="#7dd3fc"/>
+    <line x1="12.5" y1="25" x2="12.5" y2="31" stroke="white" stroke-width="1"/>
+    <line x1="9" y1="28" x2="16" y2="28" stroke="white" stroke-width="1"/>
+    <rect x="24" y="25" width="7" height="6" rx="1" fill="#7dd3fc"/>
+    <line x1="27.5" y1="25" x2="27.5" y2="31" stroke="white" stroke-width="1"/>
+    <line x1="24" y1="28" x2="31" y2="28" stroke="white" stroke-width="1"/>
+    <rect x="13" y="39" width="14" height="2" rx="0.5" fill="#9ca3af"/>
+    <rect x="11" y="40" width="18" height="2" rx="0.5" fill="#6b7280"/>
+    <rect x="2" y="30" width="4" height="10" rx="1" fill="#92400e"/>
+    <ellipse cx="4" cy="27" rx="7" ry="7" fill="#16a34a"/>
+  </svg>`;
+  el.style.cssText = 'width:40px;height:44px;cursor:pointer;';
+  const popup = new mapboxgl.Popup({offset:25}).setHTML('<b>🏠 Roswell, GA</b><br>2023 IONIQ 5 Limited AWD<br>VIN KM8KRDAF2PU184848');
+  new mapboxgl.Marker({element:el, anchor:'bottom'}).setLngLat([RLNG,RLAT]).setPopup(popup).addTo(map);
+}
+
+// Fixed charger reference points
+const KNOWN=[
+  {n:'Adairsville, GA — Electrify America',lat:34.378,lng:-84.916,d:'I-75 N · Exit 306 · 350kW · CCS',ck:'ccs',nk:'ea'},
+  {n:'Commerce, GA — Electrify America',lat:34.202,lng:-83.456,d:'I-85 · 350kW · CCS',ck:'ccs',nk:'ea'},
+  {n:'Gaffney, SC — Tesla Supercharger',lat:35.073,lng:-81.644,d:'I-85 · NACS · Key stop for Charlotte',ck:'nacs',nk:'tesla'},
+  {n:'Ashburn, GA — Supercharger',lat:31.712,lng:-83.638,d:'I-75 S · NACS · Key for FL runs',ck:'nacs',nk:'tesla'},
+  {n:'Oxford, AL — Supercharger',lat:33.610,lng:-85.782,d:'I-20 W · NACS · Target nearby',ck:'nacs',nk:'tesla'},
+  {n:'Montgomery, AL — Supercharger',lat:32.361,lng:-86.161,d:'I-85 S · NACS · Key for Pensacola',ck:'nacs',nk:'tesla'},
+  {n:'Chattanooga, TN — Supercharger',lat:35.039,lng:-85.196,d:'I-75 N · NACS · Key for Nashville',ck:'nacs',nk:'tesla'},
+];
+const KNOWN_COLORS={ccs:'#3b82f6',nacs:'#ef4444',j1772:'#eab308',gm:'#9333ea'};
+KNOWN.forEach(c=>{
+  const el2 = mkDotEl(KNOWN_COLORS[c.ck]||'#185FA5','sq',13);
+  const p2 = new mapboxgl.Popup({offset:8}).setHTML(`<b>⚡ ${c.n}</b><br>${c.d}`);
+  new mapboxgl.Marker({element:el2}).setLngLat([c.lng,c.lat]).setPopup(p2).addTo(map);
+});
+
+const CITIES=[
+  {name:'Atlanta',lat:33.749,lng:-84.388,dist:25},
+  {name:'Chattanooga, TN',lat:35.045,lng:-85.311,dist:115},
+  {name:'Birmingham, AL',lat:33.521,lng:-86.802,dist:150},
+  {name:'Montgomery, AL',lat:32.361,lng:-86.299,dist:165},
+  {name:'Knoxville, TN',lat:35.961,lng:-83.921,dist:175},
+  {name:'Charlotte, NC',lat:35.227,lng:-80.843,dist:245},
+  {name:'Nashville, TN',lat:36.162,lng:-86.781,dist:250},
+  {name:'Savannah, GA',lat:32.080,lng:-81.100,dist:250},
+  {name:'Columbia, SC',lat:34.000,lng:-81.035,dist:265},
+  {name:'Tallahassee, FL',lat:30.438,lng:-84.280,dist:290},
+  {name:'Charleston, SC',lat:32.776,lng:-79.931,dist:330},
+  {name:'Gainesville, FL',lat:29.651,lng:-82.325,dist:330},
+  {name:'Pensacola, FL',lat:30.401,lng:-87.217,dist:340},
+  {name:'Myrtle Beach, SC',lat:33.689,lng:-78.887,dist:360},
+  {name:'Jacksonville, FL',lat:30.332,lng:-81.656,dist:370},
+  {name:'Memphis, TN',lat:35.149,lng:-90.048,dist:370},
+];
+function initCityMarkers(){
+  CITIES.forEach(c=>{
+    const el = mkDotEl('#534AB7','circle',12);
+    const popup = new mapboxgl.Popup({offset:10}).setHTML(`<b>${c.name}</b> — ~${c.dist} mi from Roswell`);
+    new mapboxgl.Marker({element:el}).setLngLat([c.lng,c.lat]).setPopup(popup).addTo(map);
+  });
+}
+
+// ═══════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',['route','rings'][i]===name));
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  // Rings always stay on map — no hide/show on tab switch
+}
+
+// ═══════════════════════════════════════════════
+// AUTOCOMPLETE — Photon geocoder (CORS-open)
+// ═══════════════════════════════════════════════
+const acTimers={};
+const acSelected={};
+
+function acSearch(inp,listId){
+  const q=inp.value.trim();
+  if(q.length<3){hideAc(listId);return;}
+  clearTimeout(acTimers[listId]);
+  acTimers[listId]=setTimeout(()=>doAcSearch(q,inp,listId),300);
+}
+
+async function doAcSearch(q,inp,listId){
+  // Try Nominatim first (reliable from https://), then Photon as fallback
+  let results = [];
+
+  // 1. Nominatim
+  try{
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&countrycodes=us&addressdetails=1&dedupe=1`
+    );
+    if(res.ok){
+      const d = await res.json();
+      results = d.map(r=>{
+        const a = r.address||{};
+        const main = a.amenity||a.building||a.road||a.city||a.town||a.village||a.county||r.display_name.split(',')[0];
+        const parts = [a.road,a.city||a.town||a.village,a.state].filter(Boolean);
+        const sub = parts.join(', ');
+        const type = r.type||r.class||'';
+        const icon = type==='residential'||type==='house'?'🏠':
+                     type==='restaurant'||type==='cafe'||type==='amenity'?'🏢':
+                     type==='city'||type==='town'?'🏙️':'📍';
+        return {lat:parseFloat(r.lat),lng:parseFloat(r.lon),main,sub,icon,full:r.display_name};
+      });
+    }
+  }catch(e){ console.warn('Nominatim AC failed:',e.message); }
+
+  // 2. Photon fallback if Nominatim returned nothing
+  if(!results.length){
+    try{
+      const res=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en&bbox=-125,24,-66,50`);
+      if(res.ok){
+        const d=await res.json();
+        results = (d.features||[]).map(f=>{
+          const p=f.properties;
+          const [lng,lat]=f.geometry.coordinates;
+          const main=p.name||p.street||p.city||'';
+          const sub=[p.housenumber?p.housenumber+' '+p.street:'',p.city||p.town||p.village||'',p.state||''].filter(Boolean).join(', ');
+          const icon=p.type==='house'?'🏠':p.type==='amenity'?'🏢':p.type==='city'||p.type==='town'?'🏙️':'📍';
+          return {lat,lng,main,sub,icon,full:main+', '+sub};
+        });
+      }
+    }catch(e){ console.warn('Photon AC failed:',e.message); }
+  }
+
+  const list=document.getElementById(listId);
+  if(!results.length){hideAc(listId);return;}
+  list.innerHTML='';
+  results.forEach(r=>{
+    const item=document.createElement('div');
+    item.className='ac-item';
+    item.innerHTML=`<span class="ac-icon">${r.icon}</span><div><div class="ac-main">${r.main}</div><div class="ac-sub">${r.sub}</div></div>`;
+    item.addEventListener('mousedown',()=>{
+      const displayVal = r.main+(r.sub?', '+r.sub:'');
+      inp.value=displayVal;
+      acSelected[inp.id]={lat:r.lat,lng:r.lng,name:displayVal};
+      setHint(inp.id.replace('inp-',''),displayVal);
+      hideAc(listId);
+    });
+    list.appendChild(item);
+  });
+  list.classList.add('open');
+}
+
+function hideAc(listId){
+  const l=document.getElementById(listId);
+  if(l) l.classList.remove('open');
+}
+
+function delayHide(listId){ setTimeout(()=>hideAc(listId),200); }
+
+function setHint(key,txt){
+  const el=document.getElementById('hint-'+key);
+  if(el) el.textContent=txt?'📍 '+txt.substring(0,50):'';
+}
+
+// Geocode — tries multiple sources for maximum reliability
+async function geocode(q){
+  if(!q||!q.trim()) throw new Error('Empty query');
+  q = q.trim();
+
+  // 1. US ZIP codes → Zippopotam.us
+  if(/^\d{5}$/.test(q)){
+    try{
+      const res=await fetch(`https://api.zippopotam.us/us/${q}`);
+      if(res.ok){
+        const d=await res.json();
+        const place=d.places?.[0];
+        if(place) return{
+          lat:parseFloat(place.latitude),
+          lng:parseFloat(place.longitude),
+          name:`${place['place name']}, ${place['state abbreviation']} ${q}`
+        };
+      }
+    }catch(e){ console.warn('Zippopotam failed'); }
+  }
+
+  // 2. Nominatim (works great from https://, fast, accurate US addresses)
+  try{
+    const res=await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1&countrycodes=us&addressdetails=1`,
+      {headers:{'Accept-Language':'en','User-Agent':'EVTripPlanner/1.0 ev-route.ev4dummies.com'}}
+    );
+    if(res.ok){
+      const d=await res.json();
+      if(d&&d.length){
+        return{lat:parseFloat(d[0].lat),lng:parseFloat(d[0].lon),name:d[0].display_name};
+      }
+    }
+  }catch(e){ console.warn('Nominatim failed:', e.message); }
+
+  // 3. Photon fallback
+  try{
+    const res=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=1&lang=en&bbox=-125,24,-66,50`);
+    if(res.ok){
+      const d=await res.json();
+      if(d.features&&d.features.length){
+        const [lng,lat]=d.features[0].geometry.coordinates;
+        const p=d.features[0].properties;
+        return{lat,lng,name:[p.name,p.city||p.state].filter(Boolean).join(', ')};
+      }
+    }
+  }catch(e){ console.warn('Photon failed:', e.message); }
+
+  throw new Error('Could not find location: '+q);
+}
+
+// Get coords from input — use acSelected cache first, then geocode
+async function resolveInput(key){
+  const inp=document.getElementById('inp-'+key);
+  const q=inp?inp.value.trim():'';
+  if(!q) return null;
+  if(acSelected[`inp-${key}`]) return acSelected[`inp-${key}`];
+  return await geocode(q);
+}
+
+// ═══════════════════════════════════════════════
+// MAP PICK (point & click)
+// ═══════════════════════════════════════════════
+const RT={
+  picking:null,
+  markers:{},
+  routeLayer:null,
+  chargerMarkers:[],
+  wpCount:0,
+  activeConns:new Set(['ccs','nacs','j1772','gm']),
+  activeNets:new Set(['ea','tesla','blink','cp','evgo','gm','evc']),
+  lastMiles:null,
+  chargerData:[],
+  routeCoords:null,
+};
+
+function activatePick(key){
+  RT.picking=key;
+  document.getElementById('pick-banner').style.display='block';
+  map.getContainer().style.cursor='crosshair';
+  document.querySelectorAll('.pin-btn').forEach(b=>b.classList.remove('active'));
+  const pb=document.getElementById('pin-'+key);
+  if(pb) pb.classList.add('active');
+}
+
+function cancelPick(){
+  RT.picking=null;
+  document.getElementById('pick-banner').style.display='none';
+  map.getContainer().style.cursor='';
+  document.querySelectorAll('.pin-btn').forEach(b=>b.classList.remove('active'));
+}
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape')cancelPick();});
+
+map.on('click',async function(e){
+  if(!RT.picking) return;
+  const{lat,lng}=e.latlng;
+  const key=RT.picking;
+  cancelPick();
+
+  // Reverse geocode
+  let addr=`${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  try{
+    const r=await fetch(`https://photon.komoot.io/reverse?lon=${lng}&lat=${lat}&limit=1`);
+    const d=await r.json();
+    if(d.features&&d.features.length){
+      const p=d.features[0].properties;
+      addr=[p.name||p.street,p.city||p.town||p.village,p.state].filter(Boolean).join(', ');
+    }
+  }catch(e){}
+
+  const inp=document.getElementById('inp-'+key);
+  if(inp) inp.value=addr;
+  acSelected[`inp-${key}`]={lat,lng,name:addr};
+  setHint(key,addr);
+
+  // Drop marker
+  if(RT.markers[key]) map.removeLayer(RT.markers[key]);
+  // Dynamic stop colors — start=green, end=red, stops cycle through blues/oranges
+  const stopColors=['#185FA5','#f97316','#9333ea','#16a34a','#e11d48','#0891b2'];
+  const colors={start:'#1D9E75',end:'#E24B4A'};
+  const labels={start:'S',end:'E'};
+  // Assign color/label for dynamic stop IDs
+  getAllStopIds().forEach((sid,i)=>{colors[sid]=stopColors[i%stopColors.length];labels[sid]=String(i+1);});
+  const pinEl2 = document.createElement('div');
+  pinEl2.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">
+    <path d="M14 0C6.3 0 0 6.3 0 14c0 9.9 14 22 14 22S28 23.9 28 14 21.7 0 14 0z" fill="${colors[key]||'#185FA5'}"/>
+    <circle cx="14" cy="14" r="7" fill="white"/>
+    <text x="14" y="18.5" text-anchor="middle" font-size="10" font-family="sans-serif" fill="${colors[key]||'#185FA5'}" font-weight="bold">${labels[key]||'📍'}</text>
+  </svg>`;
+  pinEl2.style.cssText = 'width:28px;height:36px;cursor:pointer;';
+  RT.markers[key] = new mapboxgl.Marker({element:pinEl2, anchor:'bottom'}).setLngLat([lng,lat]).addTo(map);
+});
+
+// ═══════════════════════════════════════════════
+// WAYPOINT COUNT
+// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════
+// DYNAMIC STOPS (v14) — unlimited, add/remove
+// ═══════════════════════════════════════════════
+// RT.wpCount is still used by calcRoute to know how many stops exist
+// We manage it via the DOM stop rows
+
+function getStopCount(){
+  return document.querySelectorAll('.stop-row').length;
+}
+
+function addStop(value=''){
+  const container = document.getElementById('stops-container');
+  const n = getStopCount() + 1;
+  const id = `wp${n}_${Date.now()}`; // unique ID per stop
+
+  const row = document.createElement('div');
+  row.className = 'stop-row';
+  row.dataset.stopId = id;
+  row.innerHTML = `
+    <div class="input-row">
+      <div class="input-label" style="font-size:10px;color:#888780;padding-top:8px;min-width:42px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Stop ${n}</div>
+      <div class="addr-wrap">
+        <input class="addr-input" type="text" id="inp-${id}"
+          value="${value.replace(/"/g,'&quot;')}"
+          placeholder="ZIP, address, city, or click 📍"
+          autocomplete="off"
+          oninput="acSearch(this,'ac-${id}')"
+          onblur="delayHide('ac-${id}')">
+        <div class="autocomplete-list" id="ac-${id}"></div>
+      </div>
+      <button class="pin-btn" id="pin-${id}" title="Click map to place" onclick="activatePick('${id}')">📍</button>
+      <button class="stop-remove-btn" title="Remove this stop" onclick="removeStop(this)">×</button>
+    </div>
+    <div class="wp-hint" id="hint-${id}"></div>
+  `;
+  container.appendChild(row);
+  renumberStops();
+  RT.wpCount = getStopCount();
+
+  // Add favorites button inline
+  const inputRow2 = row.querySelector('.input-row');
+  if(inputRow2){
+    const favBtn = document.createElement('button');
+    favBtn.className = 'fav-btn';
+    favBtn.title = 'Favorites';
+    favBtn.innerHTML = '⭐';
+    favBtn.onclick = function(){ toggleFavDropdown(id, favBtn); };
+    const favDd = document.createElement('div');
+    favDd.className = 'fav-dropdown';
+    favDd.id = 'fav-'+id;
+    inputRow2.appendChild(favBtn);
+    inputRow2.appendChild(favDd);
+  }
+
+  // Focus the new input
+  const inp = document.getElementById('inp-'+id);
+  if(inp) setTimeout(()=>inp.focus(), 50);
+}
+
+function removeStop(btn){
+  const row = btn.closest('.stop-row');
+  const id = row.dataset.stopId;
+  // Remove map marker if placed
+  if(RT.markers && RT.markers[id]) { RT.markers[id].remove(); delete RT.markers[id]; }
+  // Remove autocomplete selection cache
+  delete acSelected['inp-'+id];
+  row.remove();
+  renumberStops();
+  RT.wpCount = getStopCount();
+}
+
+function renumberStops(){
+  document.querySelectorAll('.stop-row').forEach((row,i)=>{
+    const lbl = row.querySelector('.input-label');
+    if(lbl) lbl.textContent = `Stop ${i+1}`;
+  });
+}
+
+function getAllStopIds(){
+  return [...document.querySelectorAll('.stop-row')].map(r=>r.dataset.stopId);
+}
+
+// Legacy setWpCount kept as no-op for safety
+function setWpCount(n){ RT.wpCount = n; }
+
+
+// ═══════════════════════════════════════════════
+// ROUTE (OSRM — CORS-open from file://)
+// ═══════════════════════════════════════════════
+// ROUTE — OpenRouteService (primary, reliable) → OSRM → straight-line
+// ═══════════════════════════════════════════════
+// ORS free API key — 2000 requests/day, no credit card
+const ORS_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijk1OTM3N2I0NWM0NTRmYWViMTI0ZjkxYWU2NzM5ZmU2IiwiaCI6Im11cm11cjY0In0=';
+
+async function getRoute(coords){
+  setStatus('loading','📍 Calculating driving route…');
+
+  // ── 1. OpenRouteService (most reliable, real driving routes) ──
+  try{
+    const body = {
+      coordinates: coords.map(c=>[c.lng, c.lat]),
+      format: 'geojson',
+      instructions: false,
+    };
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=>ctrl.abort(), 15000);
+    const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization': ORS_KEY},
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if(res.ok){
+      const d = await res.json();
+      const feat = d.features?.[0];
+      if(feat){
+        const seg = feat.properties.segments;
+        const totalDist = feat.properties.summary.distance;
+        const totalDur  = feat.properties.summary.duration;
+        // Build legs array matching OSRM format
+        const legs = seg ? seg.map(s=>({distance:s.distance,duration:s.duration,steps:[]}))
+                        : [{distance:totalDist,duration:totalDur,steps:[]}];
+        console.log('✅ Route from OpenRouteService',totalDist,'m');
+        return {
+          distance: totalDist,
+          duration: totalDur,
+          geometry: feat.geometry,
+          legs: legs,
+        };
+      }
+    }
+    throw new Error(`ORS HTTP ${res.status}`);
+  }catch(e){ console.warn('ORS failed:', e.message); }
+
+  // ── 2. OSRM demo server ──
+  try{
+    const str = coords.map(c=>`${c.lng},${c.lat}`).join(';');
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=>ctrl.abort(), 15000);
+    const res = await fetch(
+      `https://router.project-osrm.org/route/v1/driving/${str}?overview=full&geometries=geojson&steps=false`,
+      {signal: ctrl.signal}
+    );
+    clearTimeout(timer);
+    if(res.ok){
+      const d = await res.json();
+      if(d.code==='Ok' && d.routes?.length){
+        console.log('✅ Route from OSRM');
+        return d.routes[0];
+      }
+    }
+    throw new Error('OSRM failed');
+  }catch(e){ console.warn('OSRM failed:', e.message); }
+
+  // ── 3. Straight-line last resort ──
+  console.warn('All routing servers failed — straight-line fallback');
+  setStatus('loading','⚠️ Routing servers unavailable — using straight-line estimate');
+  const start=coords[0], end=coords[coords.length-1];
+  const steps=40;
+  const lineCoords=Array.from({length:steps+1},(_,i)=>[
+    start.lng+(end.lng-start.lng)*(i/steps),
+    start.lat+(end.lat-start.lat)*(i/steps)
+  ]);
+  const R=6371000;
+  const lat1=start.lat*Math.PI/180,lat2=end.lat*Math.PI/180;
+  const dlat=(end.lat-start.lat)*Math.PI/180,dlng=(end.lng-start.lng)*Math.PI/180;
+  const a=Math.sin(dlat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dlng/2)**2;
+  const dist=R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  return{
+    distance:dist, duration:dist/25,
+    geometry:{type:'LineString',coordinates:lineCoords},
+    legs:[{distance:dist,duration:dist/25,steps:[]}]
+  };
+}
+
+// ═══════════════════════════════════════════════
+// CHARGER FETCH — NREL AFDC REAL DATA ONLY
+// Key: NuUguIq9Ntmk4PMHvj7Iu0EHKhLE27WfDckUhbb3
+// No fake/demo data — real verified US stations only
+// ═══════════════════════════════════════════════
+const NREL_KEY = 'NuUguIq9Ntmk4PMHvj7Iu0EHKhLE27WfDckUhbb3';
+// PlugShare API — static web credential
+const PS_AUTH = 'Basic d2ViX3YyOkVOanNuUE54NHhXeHVkODU=';
+const PS_BASE = 'https://api.plugshare.com/v3';
+
+const NREL_NET_MAP = {
+  // Tesla / NACS
+  'tesla': 'tesla', 'tesla destination': 'tesla', 'tesla supercharger': 'tesla',
+  // Electrify America / Ionna (new EA spinoff)
+  'electrify america': 'ea', 'ionna': 'ea',
+  // Blink
+  'blink network': 'blink', 'blink': 'blink', 'blink charging': 'blink',
+  // ChargePoint
+  'chargepoint network': 'cp', 'chargepoint': 'cp',
+  // EVgo
+  'evgo network': 'evgo', 'evgo': 'evgo',
+  // GM Ultium
+  'gm ultium': 'gm', 'ultium charge 360': 'gm', 'gm energy': 'gm',
+  // EV Connect
+  'ev connect': 'evc', 'evconnect': 'evc',
+  // Mercedes-Benz HPC — NREL lists these separately from generic "mercedes-benz"
+  'mercedes-benz hpc': 'mb', 'mercedes-benz high power charging': 'mb',
+  'mercedes-benz charging': 'mb', 'mb hpc': 'mb',
+  // Ionna (new EA network)
+  'ionna': 'ea',
+  // Buc-ee's (hosts MB HPC stations)
+  // Francis Energy, Red E
+  'francis energy': 'cp', 'red e charge': 'cp',
+  // Mercedes me Charge
+  'mercedes-benz': 'mb', 'mercedes me charge': 'mb', 'mercedes': 'mb',
+  // Rivian
+  'rivian': 'rivian', 'rivian adventure network': 'rivian',
+  // Ford
+  'ford charge station pro': 'ford', 'ford': 'ford', 'bluecruise': 'ford',
+  // Shell / Volta
+  'shell recharge': 'shell', 'volta': 'shell',
+  // Others mapped to generic
+  'flo': 'cp', 'greenlots': 'cp', 'semaconnect': 'cp',
+  'francis energy': 'cp', 'red e charge': 'cp',
+  'bp pulse': 'bp', 'americharge': 'cp',
+  'non-networked': 'nn', 'other': 'cp',
+};
+
+const NREL_PRICE_EST_MAP = {
+  tesla:'See Tesla app (~$0.25-0.50/kWh)',
+  ea:'~$0.48/kWh (EA member ~$0.36)',
+  blink:'~$0.39-0.49/kWh',
+  cp:'Varies (~$0.27-0.45/kWh)',
+  evgo:'~$0.45/kWh',
+  gm:'~$0.36/kWh (Ultium members)',
+  evc:'Varies',
+  mb:'See Mercedes me app',
+  rivian:'~$0.34/kWh (Rivian owners only)',
+  ford:'See Ford app',
+  shell:'Varies (~$0.35/kWh)',
+  bp:'Varies',
+  nn:'Varies (non-networked)',
+};
+
+const NREL_PRICE_EST = {
+  tesla:'See Tesla app', ea:'~$0.48/kWh', blink:'~$0.39/kWh',
+  cp:'Varies (~$0.27+)', evgo:'~$0.45/kWh', gm:'~$0.36/kWh',
+  evc:'Varies', cp:'Varies',
+};
+
+// ── NREL fetch with CORS proxy fallback chain ──
+// file:// origin gets null CORS — proxy routes around it
+// Chain: direct → allorigins proxy → corsproxy.io → error
+
+async function nrelFetch(url, options={}){
+  // Also try nlr.gov domain (NREL migrating April 30 2026)
+  const nlrUrl = url.replace('developer.nrel.gov', 'developer.nlr.gov');
+  // 1. Try direct nrel.gov
+  try {
+    const r = await fetch(url, {...options, signal: AbortSignal.timeout(8000)});
+    if(r.ok) return r;
+    throw new Error(`HTTP ${r.status}`);
+  } catch(e) { console.warn('Direct NREL failed:', e.message); }
+  // 1b. Try nlr.gov domain
+  try {
+    const r = await fetch(nlrUrl, {...options, signal: AbortSignal.timeout(8000)});
+    if(r.ok) return r;
+    throw new Error(`HTTP ${r.status}`);
+  } catch(e) { console.warn('Direct NLR failed:', e.message); }
+
+  // 2. allorigins.win proxy (GET only — encodes URL)
+  if(!options.method || options.method === 'GET'){
+    try {
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const r = await fetch(proxyUrl, {signal: AbortSignal.timeout(10000)});
+      if(r.ok) return r;
+      throw new Error(`allorigins HTTP ${r.status}`);
+    } catch(e) { console.warn('allorigins proxy failed:', e.message); }
+  }
+
+  // 3. corsproxy.io (supports GET and POST)
+  try {
+    const proxied = url.replace('https://','https://corsproxy.io/?https://');
+    const r = await fetch(proxied, {...options, signal: AbortSignal.timeout(10000)});
+    if(r.ok) return r;
+    throw new Error(`corsproxy HTTP ${r.status}`);
+  } catch(e) { console.warn('corsproxy.io failed:', e.message); }
+
+  throw new Error('All CORS proxy attempts failed — check internet connection');
+}
+
+async function fetchNearbyRoute(linestring, distanceMi){
+  // Parse route points from WKT linestring
+  const coords = linestring.replace('LINESTRING(','').replace(')','').split(',');
+  const pts = coords.map(c => {
+    const p = c.trim().split(' ');
+    return { lng: parseFloat(p[0]), lat: parseFloat(p[1]) };
+  });
+
+  // Sample points every ~50mi along route
+  const LAT2MI = 69.0, LNG2MI = 53.0;
+  const SAMPLE_MI = 50;
+  const samplePts = [pts[0]];
+  let dist = 0;
+  for(let i = 1; i < pts.length; i++){
+    const dlat = (pts[i].lat - pts[i-1].lat) * LAT2MI;
+    const dlng = (pts[i].lng - pts[i-1].lng) * LNG2MI;
+    dist += Math.sqrt(dlat*dlat + dlng*dlng);
+    if(dist >= SAMPLE_MI){ samplePts.push(pts[i]); dist = 0; }
+  }
+  if(samplePts[samplePts.length-1] !== pts[pts.length-1]) samplePts.push(pts[pts.length-1]);
+
+  const searchRadius = Math.max(distanceMi, 40);
+  console.log(`Fetching PlugShare from ${samplePts.length} route points (~${SAMPLE_MI}mi spacing)`);
+
+  // ── PRIMARY: PlugShare API ──
+  setStatus('loading', `🔍 Fetching PlugShare data (${samplePts.length} route points)…`);
+  const psSeen = new Set();
+  const psResults = [];
+
+  // Build outlet filter — DCFC only: CCS1=6, NACS=7, CHAdeMO=4
+  const outletParam = 'outlet_types=6,7,4&minimum_power=50';
+
+  for(let i = 0; i < samplePts.length; i++){
+    const pt = samplePts[i];
+    if(i > 0 && i % 4 === 0) await new Promise(r => setTimeout(r, 250));
+    try {
+      const url = `${PS_BASE}/locations/region?access=1&count=500&latitude=${pt.lat.toFixed(5)}&longitude=${pt.lng.toFixed(5)}&radius=${Math.ceil(searchRadius)}&${outletParam}`;
+      const res = await fetch(url, {
+        headers: { 'Authorization': PS_AUTH, 'Accept': 'application/json' }
+      });
+      if(!res.ok) throw new Error(`PS HTTP ${res.status}`);
+      const data = await res.json();
+      const stations = Array.isArray(data) ? data : (data.locations || []);
+      let added = 0;
+      stations.forEach(s => {
+        const key = `${parseFloat(s.latitude).toFixed(4)}_${parseFloat(s.longitude).toFixed(4)}`;
+        if(!psSeen.has(key)){ psSeen.add(key); psResults.push(s); added++; }
+      });
+      setStatus('loading', `🔍 PlugShare: pt ${i+1}/${samplePts.length} — ${psResults.length} stations…`);
+      console.log(`PS pt ${i+1}/${samplePts.length}: +${added}, total ${psResults.length}`);
+    } catch(e) {
+      console.warn(`PlugShare pt ${i+1} failed:`, e.message);
+    }
+  }
+
+  if(psResults.length > 0){
+    console.log(`✅ PlugShare total: ${psResults.length} stations`);
+    const normalized = normalizePlugShare(psResults);
+    console.log(`✅ Normalized: ${normalized.length} DCFC stations`);
+    return normalized;
+  }
+
+  // ── FALLBACK: NREL if PlugShare fails ──
+  console.warn('PlugShare returned 0 results — falling back to NREL+OCM');
+  setStatus('loading', `⚠️ PlugShare unavailable, using NREL fallback…`);
+  return await fetchNRELFallback(samplePts, searchRadius);
+}
+
+// ── PlugShare normalizer ──
+// Converts PlugShare v3 station format to our internal format
+function normalizePlugShare(stations){
+  // PlugShare network IDs → our icon keys
+  const PS_NET_MAP = {
+    'Tesla': 'tesla', 'Tesla Supercharger': 'tesla', 'Tesla Destination': 'tesla',
+    'Electrify America': 'ea', 'Ionna': 'ea',
+    'Blink': 'blink',
+    'ChargePoint': 'cp',
+    'EVgo': 'evgo',
+    'Rivian Adventure Network': 'rivian',
+    'Ford BlueOval': 'ford',
+    'Mercedes-Benz Charging': 'mb', 'Mercedes-Benz High-Power Charging': 'mb',
+    'GM Energy': 'gm', 'Ultium Charge 360': 'gm',
+    'Shell Recharge': 'shell',
+    'Volta': 'volta',
+    'Greenlots': 'cp',
+    'SemaConnect': 'cp',
+    'EVCS': 'evcs',
+    'Francis': 'cp',
+  };
+
+  const PS_KW_MAP = {
+    'tesla': 250, 'ea': 350, 'blink': 80, 'cp': 62, 'evgo': 350,
+    'rivian': 200, 'ford': 150, 'mb': 400, 'gm': 300, 'shell': 150,
+    'volta': 50, 'evcs': 100,
+  };
+
+  const results = [];
+
+  for(const s of stations){
+    // Must have location data
+    const lat = parseFloat(s.latitude);
+    const lng = parseFloat(s.longitude);
+    if(!lat || !lng) continue;
+
+    // Get ports/outlets
+    const outlets = s.outlets || s.plugs || [];
+    
+    // Find max kW from outlets
+    let maxKw = 0;
+    let hasDCFC = false;
+    let connTypes = new Set();
+
+    for(const outlet of outlets){
+      const kw = parseFloat(outlet.kilowatts || outlet.kw || 0);
+      if(kw >= 50) hasDCFC = true;
+      if(kw > maxKw) maxKw = kw;
+      // Connector type IDs: 6=CCS1, 7=NACS/Tesla, 4=CHAdeMO, 13=CCS2
+      const typeId = outlet.outlet_type_id || outlet.connector_type_id;
+      if(typeId) connTypes.add(typeId);
+    }
+
+    // Skip non-DCFC
+    if(!hasDCFC && maxKw < 50) continue;
+
+    // Network
+    const netName = s.network?.name || s.name || '';
+    const nk = PS_NET_MAP[netName] || 'other';
+
+    // Estimate kW if not in outlet data
+    if(maxKw < 50) maxKw = PS_KW_MAP[nk] || 100;
+
+    // Stall count
+    const stalls = outlets.length || s.num_plugs || 1;
+
+    // Connector labels
+    const connLabels = [];
+    if(connTypes.has(7) || connTypes.has('7')) connLabels.push('NACS');
+    if(connTypes.has(6) || connTypes.has('6')) connLabels.push('CCS1');
+    if(connTypes.has(4) || connTypes.has('4')) connLabels.push('CHAdeMO');
+    if(connLabels.length === 0) connLabels.push('CCS1'); // default
+
+    results.push({
+      id: `ps_${s.id || lat.toFixed(5)+'_'+lng.toFixed(5)}`,
+      name: s.name || netName || 'Charging Station',
+      lat, lng,
+      network: nk,
+      networkRaw: netName,
+      maxKw,
+      stalls,
+      connectors: connLabels,
+      available: s.open_to_public !== false,
+      address: s.address || '',
+      city: s.city || '',
+      state: s.state || '',
+      zip: s.zip || '',
+      source: 'plugshare',
+    });
+  }
+
+  return results;
+}
+
+// ── NREL fallback (used only if PlugShare fails) ──
+async function fetchNRELFallback(samplePts, searchRadius){
+  const seen = new Set();
+  const all = [];
+
+  for(let i = 0; i < samplePts.length; i++){
+    const pt = samplePts[i];
+    if(i > 0 && i % 3 === 0) await new Promise(r => setTimeout(r, 300));
+    try {
+      const url = 'https://developer.nrel.gov/api/alt-fuel-stations/v1/nearest.json'
+        + `?api_key=${NREL_KEY}&fuel_type=ELEC`
+        + `&latitude=${pt.lat.toFixed(5)}&longitude=${pt.lng.toFixed(5)}`
+        + `&radius=${Math.ceil(searchRadius)}&limit=200`;
+      const res = await nrelFetch(url);
+      const d = await res.json();
+      (d.fuel_stations || []).forEach(s => {
+        const key = `${parseFloat(s.latitude).toFixed(4)}_${parseFloat(s.longitude).toFixed(4)}`;
+        if(!seen.has(key)){ seen.add(key); all.push(s); }
+      });
+      setStatus('loading', `🔍 NREL fallback: pt ${i+1}/${samplePts.length} — ${all.length} stations…`);
+    } catch(e) { console.warn(`NREL pt ${i+1} failed:`, e.message); }
+  }
+
+  console.log(`✅ NREL fallback: ${all.length} stations`);
+  return normalizeNREL(all);
+}
+
+// Legacy compatibility
+async function fetchChargers(lat, lng, radiusMi){
+  const url = 'https://developer.nrel.gov/api/alt-fuel-stations/v1/nearest.json'
+    + `?api_key=${NREL_KEY}&fuel_type=ELEC`
+    + `&latitude=${lat}&longitude=${lng}`
+    + `&radius=${Math.ceil(radiusMi)}&limit=200`;
+  const res = await nrelFetch(url);
+  const d = await res.json();
+  return normalizeNREL(d.fuel_stations||[]);
+}
+
+function normalizeNREL(stations){
+  return stations.map(s => {
+    const ev = s.ev_connector_types || [];
+    const dcFast = parseInt(s.ev_dc_fast_num)    || 0;
+    const l2     = parseInt(s.ev_level2_evse_num) || 0;
+    const l1     = parseInt(s.ev_level1_evse_num) || 0;
+    const total  = dcFast + l2 + l1 || 1;
+
+    // Connector type — priority: NACS > CCS (DC fast) > CHAdeMO > J1772
+    let ck = 'j1772', maxKw = 7.2;
+    if(ev.includes('NACS') || ev.includes('TESLA')){
+      ck = 'nacs'; maxKw = 250;
+    } else if(ev.includes('J1772COMBO') || dcFast > 0){
+      ck = 'ccs';
+      // Use network-based kW — far more accurate than stall count guessing
+      // NREL stores network name in ev_network field
+      const netLow = (s.ev_network||'').toLowerCase();
+      if(netLow.includes('electrify america') || netLow.includes('ionna')){
+        maxKw = 350; // EA stations are 150-350kW, flag as 350 (max capability)
+      } else if(netLow.includes('mercedes') || netLow.includes('mb hpc')){
+        maxKw = 400; // MB HPC are 400kW
+      } else if(netLow.includes('evgo')){
+        maxKw = 350; // EVgo Ultra stations up to 350kW
+      } else if(netLow.includes('chargepoint')){
+        maxKw = dcFast > 0 ? 200 : 7.2; // ChargePoint Express 200kW
+      } else if(netLow.includes('blink')){
+        maxKw = 80;
+      } else if(netLow.includes('ultium') || netLow.includes('gm')){
+        maxKw = 300;
+      } else if(netLow.includes('rivian')){
+        maxKw = 200;
+      } else {
+        // Unknown network — use stall count as rough guide but be generous
+        maxKw = dcFast >= 4 ? 150 : dcFast >= 1 ? 100 : 50;
+      }
+    } else if(ev.includes('CHADEMO')){
+      ck = 'chademo'; maxKw = 50;
+    }
+
+    // All connector types present (for popup display)
+    const connLabels = [];
+    if(ev.includes('NACS') || ev.includes('TESLA')) connLabels.push('NACS');
+    if(ev.includes('J1772COMBO')) connLabels.push('CCS');
+    if(ev.includes('CHADEMO'))    connLabels.push('CHAdeMO');
+    if(ev.includes('J1772'))      connLabels.push('J1772');
+
+    // Network
+    const netRaw = (s.ev_network || '').toLowerCase().trim();
+    const nk = NREL_NET_MAP[netRaw] || 'cp';
+    const priceEst = (NREL_PRICE_EST_MAP||NREL_PRICE_EST)[nk] || 'See station';
+
+    // PlugShare link — search by coordinates (most reliable cross-link)
+    const plugshareUrl = `https://www.plugshare.com/?latitude=${s.latitude}&longitude=${s.longitude}&zoom=17`;
+
+    // Google Maps link for navigation
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((s.station_name||'EV Station')+' '+s.street_address+' '+s.city+' '+s.state)}`;
+
+    return {
+      _ck:           ck,
+      _nk:           nk,
+      _price:        null,
+      _priceNote:    priceEst,
+      _hwyDist:      0,       // computed from route geometry later
+      _avail:        true,
+      _nrelId:       s.id,
+      _plugshareUrl: plugshareUrl,
+      _mapsUrl:      mapsUrl,
+      _dcFast:       dcFast,
+      _l2:           l2,
+      _l1:           l1,
+      _connLabels:   connLabels,
+      _allConnectors: ev,
+      AddressInfo: {
+        Title:           s.station_name || 'EV Station',
+        Latitude:        parseFloat(s.latitude),
+        Longitude:       parseFloat(s.longitude),
+        AddressLine1:    s.street_address || '',
+        Town:            s.city || '',
+        StateOrProvince: s.state || '',
+        PostCode:        s.zip || '',
+      },
+      OperatorInfo:  { Title: s.ev_network || 'Unknown Network' },
+      Connections:   [{ ConnectionType:{ Title: ck }, PowerKW: maxKw }],
+      NumberOfPoints: total,
+    };
+  }).filter(c =>
+    !isNaN(c.AddressInfo.Latitude) &&
+    !isNaN(c.AddressInfo.Longitude) &&
+    c.AddressInfo.Latitude !== 0 &&
+    c.AddressInfo.Longitude !== 0
+  );
+}
+
+// ═══════════════════════════════════════════════
+// OCM (Open Charge Map) — secondary source
+// Covers Mercedes HPC, Rivian, Ford, Ionna, all gaps from NREL
+// Free, no API key, 300k+ stations worldwide
+// ═══════════════════════════════════════════════
+async function fetchOCM(lat, lng, radiusMi){
+  try {
+    const url = `https://api.openchargemap.io/v3/poi/?output=json`
+      + `&latitude=${lat}&longitude=${lng}`
+      + `&distance=${Math.ceil(radiusMi)}&distanceunit=Miles`
+      + `&maxresults=200&compact=true&verbose=false`
+      + `&minpowerkw=50`; // min 50kW — excludes slow L2 but keeps all DC fast
+
+    const res = await fetch(url, {signal: AbortSignal.timeout(10000)});
+    if(!res.ok) throw new Error(`OCM HTTP ${res.status}`);
+    const data = await res.json();
+    if(!Array.isArray(data) || !data.length) return [];
+    console.log(`✅ OCM: ${data.length} stations`);
+    return normalizeOCM(data);
+  } catch(e) {
+    console.warn('OCM fetch failed:', e.message);
+    return [];
+  }
+}
+
+function normalizeOCM(stations){
+  const OCM_NET_MAP = {
+    'electrify america': 'ea',
+    'tesla': 'tesla', 'tesla supercharger': 'tesla', 'tesla destination charging': 'tesla',
+    'chargepoint': 'cp', 'chargepoint network': 'cp',
+    'blink': 'blink', 'blink network': 'blink',
+    'evgo': 'evgo', 'evgo network': 'evgo',
+    'mercedes-benz': 'mb', 'mercedes benz': 'mb', 'mercedes': 'mb',
+    'rivian': 'rivian', 'rivian adventure network': 'rivian',
+    'ford': 'ford', 'ford charge station pro': 'ford',
+    'gm ultium': 'gm', 'ultium': 'gm',
+    'shell recharge': 'shell', 'volta': 'shell',
+    'ionna': 'ea',
+    'ev connect': 'evc',
+    'francis energy': 'cp',
+  };
+
+  const OCM_CONN_MAP = {
+    25: 'nacs',  // Tesla proprietary / NACS
+    33: 'nacs',  // Tesla (Type 2)
+    27: 'ccs',   // CCS (Type 1 / SAE J1772-2)
+    32: 'ccs',   // CCS (Type 2)
+    2:  'chademo',
+    1:  'j1772', // J1772
+    3:  'j1772',
+  };
+
+  return stations.map(s => {
+    const conns = s.Connections || [];
+    // Find highest power connector
+    let maxKw = 0, ck = 'ccs';
+    conns.forEach(c => {
+      const kw = c.PowerKW || (c.Voltage && c.Amps ? (c.Voltage * c.Amps / 1000) : 0);
+      if(kw > maxKw){ maxKw = kw; }
+      const mapped = OCM_CONN_MAP[c.ConnectionTypeID];
+      if(mapped) ck = mapped;
+    });
+    // If OCM has no power data, estimate from operator name
+    if(maxKw < 50 && conns.some(c => c.LevelID === 3)){
+      const opLow = (s.OperatorInfo?.Title||'').toLowerCase();
+      if(opLow.includes('electrify america') || opLow.includes('ionna')) maxKw = 350;
+      else if(opLow.includes('mercedes')) maxKw = 400;
+      else if(opLow.includes('evgo')) maxKw = 350;
+      else if(opLow.includes('chargepoint')) maxKw = 200;
+      else if(opLow.includes('tesla') || opLow.includes('supercharger')) maxKw = 250;
+      else if(opLow.includes('blink')) maxKw = 80;
+      else if(opLow.includes('rivian')) maxKw = 200;
+      else maxKw = 100; // unknown DC fast — assume 100kW minimum
+    }
+
+    const netName = (s.OperatorInfo?.Title || '').toLowerCase().trim();
+    const nk = OCM_NET_MAP[netName] || 'cp';
+
+    // All connector labels
+    const connLabels = [...new Set(conns.map(c => OCM_CONN_MAP[c.ConnectionTypeID]).filter(Boolean))];
+
+    const dcFast = conns.filter(c => (c.PowerKW||0) >= 50 || c.LevelID === 3).length;
+    const l2 = conns.filter(c => c.LevelID === 2).length;
+    const total = conns.length || 1;
+
+    const lat = parseFloat(s.AddressInfo?.Latitude);
+    const lng = parseFloat(s.AddressInfo?.Longitude);
+    if(isNaN(lat) || isNaN(lng)) return null;
+
+    const addr = [
+      s.AddressInfo?.AddressLine1,
+      s.AddressInfo?.Town,
+      s.AddressInfo?.StateOrProvince,
+      s.AddressInfo?.Postcode
+    ].filter(Boolean).join(', ');
+
+    const plugshareUrl = `https://www.plugshare.com/?latitude=${lat}&longitude=${lng}&zoom=17`;
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.AddressInfo?.Title+' '+addr)}`;
+
+    // Price estimate
+    const priceEst = (NREL_PRICE_EST_MAP||{})[nk] || 'See station';
+
+    return {
+      _ck: ck,
+      _nk: nk,
+      _price: null,
+      _priceNote: priceEst,
+      _hwyDist: 0,
+      _avail: true,
+      _source: 'ocm',
+      _dcFast: dcFast,
+      _l2: l2,
+      _connLabels: connLabels.length ? connLabels : [ck],
+      _plugshareUrl: plugshareUrl,
+      _mapsUrl: mapsUrl,
+      AddressInfo: {
+        Title: s.AddressInfo?.Title || 'EV Station',
+        Latitude: lat,
+        Longitude: lng,
+        AddressLine1: s.AddressInfo?.AddressLine1 || '',
+        Town: s.AddressInfo?.Town || '',
+        StateOrProvince: s.AddressInfo?.StateOrProvince || '',
+        PostCode: s.AddressInfo?.Postcode || '',
+      },
+      OperatorInfo: { Title: s.OperatorInfo?.Title || 'Unknown' },
+      Connections: [{ ConnectionType: { Title: ck }, PowerKW: maxKw || 50 }],
+      NumberOfPoints: total,
+    };
+  }).filter(Boolean);
+}
+
+// ═══════════════════════════════════════════════
+// CORRIDOR FILTER — only show chargers near route
+// ═══════════════════════════════════════════════
+function ptToSegDist(ptLat,ptLng,aLat,aLng,bLat,bLng){
+  const LAT2MI=69.0;
+  const LNG2MI=Math.cos(ptLat*Math.PI/180)*69.0;
+  const dx=(bLng-aLng)*LNG2MI, dy=(bLat-aLat)*LAT2MI;
+  const px=(ptLng-aLng)*LNG2MI, py=(ptLat-aLat)*LAT2MI;
+  const segLen2=dx*dx+dy*dy;
+  if(segLen2===0) return Math.sqrt(px*px+py*py);
+  const t=Math.max(0,Math.min(1,(px*dx+py*dy)/segLen2));
+  return Math.sqrt((px-t*dx)**2+(py-t*dy)**2);
+}
+
+function distToRoute(lat,lng){
+  if(!RT.routeCoords||RT.routeCoords.length<2) return 0;
+  let minD=Infinity;
+  const step=Math.max(1,Math.floor(RT.routeCoords.length/300));
+  for(let i=0;i<RT.routeCoords.length-1;i+=step){
+    const d=ptToSegDist(lat,lng,
+      RT.routeCoords[i][1],RT.routeCoords[i][0],
+      RT.routeCoords[i+1][1],RT.routeCoords[i+1][0]);
+    if(d<minD) minD=d;
+  }
+  return minD;
+}
+
+// routeProgress: returns 0.0 (start) to 1.0 (end) — position along route
+// Used to sort chargers in direction of travel
+function routeProgress(lat, lng){
+  if(!RT.routeCoords || RT.routeCoords.length < 2) return 0;
+  const LAT2MI = 69.0, LNG2MI = 53.0;
+  let bestIdx = 0, bestDist = Infinity;
+  for(let i = 0; i < RT.routeCoords.length; i++){
+    const dlat = (lat - RT.routeCoords[i][1]) * LAT2MI;
+    const dlng = (lng - RT.routeCoords[i][0]) * LNG2MI;
+    const d = Math.sqrt(dlat*dlat + dlng*dlng);
+    if(d < bestDist){ bestDist = d; bestIdx = i; }
+  }
+  return bestIdx / (RT.routeCoords.length - 1);
+}
+
+
+// ═══════════════════════════════════════════════
+// PLOT CHARGERS
+// ═══════════════════════════════════════════════
+const CONN_COLORS={nacs:'#ef4444',chademo:'#22c55e',j1772:'#eab308',gm:'#9333ea',ccs:'#3b82f6',l2:'#f97316'};
+
+function getConnKey(c){
+  if(c._ck) return c._ck;
+  for(const conn of(c.Connections||[])){const t=(conn.ConnectionType?.Title||'').toLowerCase();if(t.includes('nacs')||t.includes('tesla'))return'nacs';if(t.includes('chademo'))return'chademo';if(t.includes('ccs')||t.includes('sae'))return'ccs';if(t.includes('j1772'))return'j1772';}
+  return'ccs';
+}
+function getNetKey(c){
+  if(c._nk) return c._nk;
+  const n=(c.OperatorInfo?.Title||'').toLowerCase();
+  if(n.includes('tesla'))return'tesla';if(n.includes('electrify'))return'ea';if(n.includes('blink'))return'blink';if(n.includes('chargepoint'))return'cp';if(n.includes('evgo'))return'evgo';if(n.includes('gm')||n.includes('ultium'))return'gm';if(n.includes('ev connect'))return'evc';
+  return'cp';
+}
+
+function clearChargerMarkers(){RT.chargerMarkers.forEach(m=>{ try{ m.remove(); }catch(e){} });RT.chargerMarkers=[];}
+
+function plotChargers(chargers){
+  clearChargerMarkers();
+  const maxP=parseFloat(document.getElementById('sl-maxprice').value);
+  const corrMi=parseInt(document.getElementById('sl-corridor').value);
+
+  chargers.forEach(c=>{
+    const lat=c.AddressInfo?.Latitude,lng=c.AddressInfo?.Longitude;
+    if(!lat||!lng||isNaN(lat)||isNaN(lng)) return;
+    c._ck=getConnKey(c);c._nk=getNetKey(c);
+    if(c._price===undefined)c._price=null;
+    if(c._avail===undefined)c._avail=true;
+    // Use pre-computed route distance (set in calcRoute) or compute now
+    const dFromRoute=c._routeDist!==undefined?c._routeDist:(RT.routeCoords?distToRoute(lat,lng):0);
+    c._routeDist=dFromRoute;
+    // Corridor filter
+    if(RT.routeCoords && c._routeDist !== undefined && c._routeDist > corrMi) return;
+    // kW + stall filters
+    const cKw = c.Connections?.[0]?.PowerKW || c.maxKw || 0;
+    const cStalls = c.NumberOfPoints || 0;
+    const minKw = getMinKw();
+    const minStalls = getMinStalls();
+    if(cKw < minKw) return;
+    if(minStalls >= 20 ? cStalls < 20 : cStalls < minStalls) return;
+
+    const color=CONN_COLORS[c._ck]||'#3b82f6';
+    const offHwy=dFromRoute>corrMi*0.6;
+    const sz=offHwy?18:14;
+
+    // Speed-based color + icon system
+    // ≤50kW  = gray   (slow DC)
+    // 51-100 = blue   (medium DC)  ⚡
+    // 101-150= teal   (fast DC)    ⚡⚡
+    // 151-250= green  (high speed) ⚡⚡
+    // 251-350= orange (ultra fast) ⚡+
+    // 351+   = red/gold(super fast) ⚡++
+    const kwNum = parseFloat(c.Connections?.[0]?.PowerKW || 0);
+    let speedColor, speedIcon, speedRing;
+    if(kwNum <= 50){
+      speedColor='#9ca3af'; speedIcon='⚡'; speedRing='rgba(156,163,175,0.3)'; // gray
+    } else if(kwNum <= 100){
+      speedColor='#3b82f6'; speedIcon='⚡'; speedRing='rgba(59,130,246,0.3)'; // blue
+    } else if(kwNum <= 150){
+      speedColor='#0891b2'; speedIcon='⚡⚡'; speedRing='rgba(8,145,178,0.3)'; // teal
+    } else if(kwNum <= 250){
+      speedColor='#16a34a'; speedIcon='⚡⚡'; speedRing='rgba(22,163,74,0.3)'; // green
+    } else if(kwNum <= 350){
+      speedColor='#f97316'; speedIcon='⚡+'; speedRing='rgba(249,115,22,0.35)'; // orange
+    } else {
+      speedColor='#dc2626'; speedIcon='⚡++'; speedRing='rgba(220,38,38,0.35)'; // red
+    }
+    // Use speed color instead of connector color for the marker
+    const markerColor = speedColor;
+    const strokeColor = offHwy ? '#f59e0b' : speedRing.replace('0.3','0.8').replace('0.35','0.8');
+
+    const el4 = document.createElement('div');
+    el4.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}">
+      <circle cx="${sz/2}" cy="${sz/2}" r="${sz/2-1}" fill="${markerColor}" opacity="0.92"
+        stroke="${strokeColor}" stroke-width="${offHwy?2.5:1.5}"/>
+      <text x="${sz/2}" y="${sz/2+3.5}" text-anchor="middle" font-size="${sz*0.38}"
+        font-family="sans-serif" fill="white" font-weight="bold">${speedIcon}</text>
+    </svg>`;
+    el4.style.cssText = `width:${sz}px;height:${sz}px;cursor:pointer;`;
+
+    const kw = c.Connections?.[0]?.PowerKW || '?';
+    // kwNum already declared above for speed tiers
+    const net = c.OperatorInfo?.Title || '—';
+    const addr = [c.AddressInfo?.AddressLine1, c.AddressInfo?.Town, c.AddressInfo?.StateOrProvince].filter(Boolean).join(', ');
+    const priceNote = c._priceNote || 'See station';
+    const connLabel = {ccs:'CCS DC Fast',nacs:'NACS / Tesla',j1772:'J1772 Level 2',chademo:'CHAdeMO',gm:'GM Ultium',l2:'Level 2'}[c._ck] || c._ck;
+    const allConns = c._connLabels?.length ? c._connLabels.join(', ') : connLabel;
+    const dcFast = c._dcFast || 0;
+    const l2cnt  = c._l2 || 0;
+    const stallDetail = [dcFast?`${dcFast} DC fast`:'', l2cnt?`${l2cnt} L2`:''].filter(Boolean).join(' + ') || `${c.NumberOfPoints||'?'} total`;
+    const psUrl  = c._plugshareUrl || '';
+    const mUrl   = c._mapsUrl || '';
+
+    const popup=`<div style="font-size:11px;min-width:210px;max-width:260px;">
+      <div style="font-size:13px;font-weight:700;color:#00aaff;margin-bottom:4px;">⚡ ${(c.AddressInfo?.Title||'EV Station').substring(0,40)}</div>
+      ${addr?`<div style="color:#aaa;font-size:10px;margin-bottom:6px;">📍 ${addr}</div>`:''}
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 8px;margin-bottom:6px;">
+        <span style="color:#aaa">Network</span><span style="font-weight:700">${net}</span>
+        <span style="color:#aaa">Connectors</span><span style="font-weight:600;color:${color}">${allConns}</span>
+        <span style="color:#aaa">Max Power</span><span style="font-weight:700;color:${kwNum<=50?'#9ca3af':kwNum<=100?'#3b82f6':kwNum<=150?'#0891b2':kwNum<=250?'#16a34a':kwNum<=350?'#f97316':'#dc2626'}">${kw} kW ${kwNum>350?'⚡++':kwNum>250?'⚡+':kwNum>100?'⚡⚡':'⚡'}</span>
+        <span style="color:#aaa">Stalls</span><span style="font-weight:700">${stallDetail}</span>
+        <span style="color:#aaa">Pricing</span><span style="color:#eab308;font-weight:600">${priceNote}</span>
+        <span style="color:#aaa">Off Route</span><span>${dFromRoute.toFixed(1)} mi${offHwy?' 🟠':''}</span>
+      </div>
+      <div class="popup-btn-row">
+        <button class="popup-btn popup-btn-stop" data-action="addstop" data-name="${(c.AddressInfo?.Title||'Charger').replace(/"/g,'&quot;')}" data-addr="${addr.replace(/"/g,'&quot;')}">➕ Add Stop</button>
+        <button class="popup-btn popup-btn-copy" data-action="copy" data-addr="${addr.replace(/"/g,'&quot;')}">📋 Copy</button>
+        ${psUrl?`<a href="${psUrl}" target="_blank" class="popup-btn popup-btn-ps">🔌 PlugShare</a>`:''}
+        ${mUrl?`<a href="${mUrl}" target="_blank" class="popup-btn popup-btn-maps">🗺 Maps</a>`:''}
+      </div>
+      ${offHwy?'<div style="margin-top:5px;color:#f97316;font-size:9px;font-style:italic;">🟠 Off main corridor — often less busy</div>':''}
+      <div style="margin-top:5px;font-size:9px;color:#666;">✅ Verified NREL/AFDC real station data</div>
+    </div>`;
+
+    const mbPop2 = new mapboxgl.Popup({offset:sz/2, maxWidth:'290px'}).setHTML(popup);
+    const m = new mapboxgl.Marker({element:el4}).setLngLat([lng,lat]).setPopup(mbPop2);
+    m._cd = c;
+
+    const maxPok=c._price===null||c._price<=maxP;
+    const show=RT.activeConns.has(c._ck)&&RT.activeNets.has(c._nk)&&maxPok;
+    if(show) m.addTo(map);
+    RT.chargerMarkers.push(m);
+  });
+
+  buildChargerList(chargers);
+  const visible=RT.chargerMarkers.filter(m=>{ try{ return m.getElement()?.style.display!=='none'; }catch(e){ return false; }}).length;
+  document.getElementById('charger-count-badge').textContent=`(${visible} visible)`;
+  document.getElementById('st-count').textContent=visible+' visible / '+chargers.length+' total';
+}
+
+function refreshVisibility(){
+  const maxP=parseFloat(document.getElementById('sl-maxprice').value);
+  const corrMi=parseInt(document.getElementById('sl-corridor').value);
+  RT.chargerMarkers.forEach(m=>{
+    const c=m._cd;if(!c)return;
+    const inCorr = !RT.routeCoords || c._routeDist === undefined || c._routeDist <= corrMi;
+    const cKw = c.Connections?.[0]?.PowerKW || c.maxKw || 0;
+    const cStalls = c.NumberOfPoints || 0;
+    const minKw = getMinKw();
+    const minStalls = getMinStalls();
+    const kwOk = cKw >= minKw;
+    const stallOk = minStalls >= 20 ? cStalls >= 20 : cStalls >= minStalls;
+    const show=RT.activeConns.has(c._ck)&&RT.activeNets.has(c._nk)&&(c._price===null||c._price<=maxP)&&inCorr&&kwOk&&stallOk;
+    const el = m.getElement();
+    if(el) el.style.display = show ? '' : 'none';
+  });
+  const visible=RT.chargerMarkers.filter(m=>{ try{ return m.getElement()?.style.display!=='none'; }catch(e){ return false; }}).length;
+  document.getElementById('charger-count-badge').textContent=`(${visible} visible)`;
+  document.getElementById('st-count').textContent=visible+' visible / '+RT.chargerData.length+' total';
+}
+
+function onCorridor(v){
+  document.getElementById('val-corridor').textContent=v+' mi';
+  refreshVisibility();
+}
+function onMaxPrice(v){
+  document.getElementById('val-maxprice').textContent='$'+parseFloat(v).toFixed(2)+'/kWh';
+  refreshVisibility();
+}
+
+// ── kW tier labels ──
+const KW_TIERS = [
+  {min:0,   label:'Show all chargers'},
+  {min:7,   label:'Level 2 AC minimum'},
+  {min:25,  label:'Fast L2 minimum'},
+  {min:50,  label:'DC Fast minimum'},
+  {min:100, label:'High speed only'},
+  {min:150, label:'High speed only (150kW+)'},
+  {min:200, label:'Ultra fast only (200kW+)'},
+  {min:250, label:'Ultra fast only (250kW+)'},
+  {min:350, label:'350kW ultra-fast only'},
+];
+
+function getStallLabel(n){
+  const s = parseInt(n);
+  if(s <= 1)  return 'Show all sizes';
+  if(s <= 3)  return 'Small stations (2+)';
+  if(s <= 5)  return 'Medium stations (4+)';
+  if(s <= 9)  return 'Larger stations (6+)';
+  if(s <= 14) return 'Big stations (10+)';
+  if(s <= 19) return 'Large hub (15+)';
+  return 'Mega hubs only (20+)';
+}
+
+function setMinKwSnap(kw){
+  // Update hidden input
+  document.getElementById('sl-minkw').value = kw;
+  // Update button states
+  document.querySelectorAll('.kw-snap').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.kw) === kw);
+  });
+  // Update label
+  const labels = {0:'Showing all charger speeds',50:'DC Fast minimum (50kW+)',
+    80:'80kW+ only',100:'100kW+ fast chargers',150:'150kW+ high speed',
+    180:'180kW+ high speed',200:'200kW+ ultra fast',250:'250kW+ ultra fast',
+    300:'300kW+ (EA, EVgo, GM)',350:'350kW+ only (EA Ultra, EVgo)',400:'400kW MB HPC only'};
+  const lbl = document.getElementById('kw-tier-lbl');
+  if(lbl) lbl.textContent = labels[kw] || kw+'kW+';
+  refreshVisibility();
+}
+
+function onMinKw(v){ setMinKwSnap(parseFloat(v)); } // legacy compat
+
+function onMinStalls(v){
+  const n = parseInt(v);
+  const label = n >= 20 ? '20+ stalls' : n + (n === 1 ? ' stall' : ' stalls');
+  document.getElementById('val-minstalls').textContent = label;
+  document.getElementById('stall-tier-lbl').textContent = getStallLabel(n);
+  refreshVisibility();
+}
+
+function getMinKw(){  return parseFloat(document.getElementById('sl-minkw')?.value || '50'); }
+function getMinStalls(){ return parseInt(document.getElementById('sl-minstalls')?.value || '1'); }
+function toggleConn(key,cb){
+  const el=document.getElementById('cc-'+key);
+  cb.checked?(RT.activeConns.add(key),el.classList.add('on')):(RT.activeConns.delete(key),el.classList.remove('on'));
+  refreshVisibility();
+}
+function toggleNet(el,key){
+  el.classList.toggle('on');
+  el.classList.contains('on')?RT.activeNets.add(key):RT.activeNets.delete(key);
+  refreshVisibility();
+}
+function toggleAllNets(el){
+  const allOn=el.classList.contains('on');
+  document.querySelectorAll('.net-wrap .net-chip:not(.net-all)').forEach(chip=>{
+    const key=chip.className.match(/net-(\w+)/)?.[1];
+    if(!key||key==='all') return;
+    if(allOn){chip.classList.remove('on');RT.activeNets.delete(key);}
+    else{chip.classList.add('on');RT.activeNets.add(key);}
+  });
+  el.classList.toggle('on');
+  refreshVisibility();
+}
+
+// ═══════════════════════════════════════════════
+// CHARGER SIDE LIST — sorted by price then distance
+// ═══════════════════════════════════════════════
+function buildChargerList(chargers){
+  const maxP=parseFloat(document.getElementById('sl-maxprice').value);
+  const corrMi=parseInt(document.getElementById('sl-corridor').value);
+  const filtered=chargers.filter(c=>{
+    const inCorr = !RT.routeCoords || c._routeDist === undefined || c._routeDist <= corrMi;
+    const cKw2 = c.Connections?.[0]?.PowerKW || c.maxKw || 0;
+    const cSt2 = c.NumberOfPoints || 0;
+    const mk = getMinKw(), ms = getMinStalls();
+    const kwOk2 = cKw2 >= mk;
+    const stOk2 = ms >= 20 ? cSt2 >= 20 : cSt2 >= ms;
+    return RT.activeConns.has(c._ck)&&RT.activeNets.has(c._nk)&&(c._price===null||c._price<=maxP)&&inCorr&&kwOk2&&stOk2;
+  });
+  // Sort by direction of travel (start → end), then by off-route distance
+  const sorted=[...filtered].sort((a,b)=>{
+    const pa = a._routeProgress ?? (a._routeDist||0);
+    const pb = b._routeProgress ?? (b._routeDist||0);
+    return pa - pb;
+  }).slice(0,80);
+
+  const connLabel={ccs:'CCS',nacs:'NACS',j1772:'J1772',chademo:'CHAdeMO',gm:'Ultium',l2:'L2'};
+  const connColors={ccs:'#3b82f6',nacs:'#ef4444',j1772:'#a37c00',chademo:'#16a34a',gm:'#7c3aed',l2:'#f97316'};
+
+  document.getElementById('charger-list').innerHTML=sorted.length?sorted.map(c=>{
+    const name=(c.AddressInfo?.Title||'Station').substring(0,38);
+    const net=(c.OperatorInfo?.Title||'—').substring(0,18);
+    const kw=c.Connections?.[0]?.PowerKW||'?';
+    const kwNum=parseFloat(kw)||0;
+    const ck=c._ck||'ccs';
+    const offR=(c._routeDist||0)>corrMi*0.6;
+    const lat=c.AddressInfo?.Latitude,lng=c.AddressInfo?.Longitude;
+    const dcF=c._dcFast||0,l2c=c._l2||0;
+    const stallStr=dcF||l2c?[dcF?dcF+' DC fast':'',l2c?l2c+' L2':''].filter(Boolean).join(' + '):(c.NumberOfPoints||'?')+' stalls';
+    const priceStr=c._priceNote||'—';
+    const psUrl=c._plugshareUrl||'';
+    const connShort={ccs:'CCS',nacs:'NACS',j1772:'J1772',chademo:'CHAdeMO',gm:'Ultium',l2:'L2'}[ck]||ck;
+    return `<div class="ch-item" onclick="map.flyTo({center:[${lng},${lat}],zoom:15});" style="cursor:pointer;">
+      <div class="ch-name"><span style="color:${connColors[ck]||'#185FA5'}">⚡</span> ${name}${psUrl?` <a href="${psUrl}" target="_blank" style="font-size:9px;color:#1e6fff;text-decoration:none;font-weight:700;margin-left:4px;" onclick="event.stopPropagation()">PlugShare↗</a>`:''}</div>
+      <div class="ch-tags">
+        <span class="ct ct-kw" style="background:${kwNum<=50?'rgba(156,163,175,0.15)':kwNum<=100?'rgba(59,130,246,0.15)':kwNum<=150?'rgba(8,145,178,0.15)':kwNum<=250?'rgba(22,163,74,0.15)':kwNum<=350?'rgba(249,115,22,0.15)':'rgba(220,38,38,0.15)'};color:${kwNum<=50?'#6b7280':kwNum<=100?'#2563eb':kwNum<=150?'#0891b2':kwNum<=250?'#16a34a':kwNum<=350?'#ea580c':'#dc2626'}">${kw}kW</span>
+        <span class="ct ct-net">${net}</span>
+        <span class="ct" style="background:rgba(24,95,165,0.1);color:#185FA5">${connShort}</span>
+        <span class="ct ct-st">${stallStr}</span>
+        <span class="ct ct-pr">${priceStr}</span>
+        <span class="ct ct-off">${(c._routeDist||0).toFixed(1)}mi</span>
+        ${offR?'<span class="ct" style="background:rgba(249,115,22,0.1);color:#f97316">🟠</span>':''}
+      </div>
+    </div>`;
+  }).join(''):'<div style="font-size:11px;color:#888780;text-align:center;padding:14px;">No chargers match current filters</div>';
+}
+
+// ═══════════════════════════════════════════════
+// ROUTE STATS
+// ═══════════════════════════════════════════════
+function updateRouteStats(){
+  const usable=Math.round(BASE_SUMMER*0.80);
+  const effective=Math.round(BASE_SUMMER*(0.80-0.15));
+  document.getElementById('st-usable').textContent=usable+' mi';
+  document.getElementById('st-effective').textContent=effective+' mi';
+  if(RT.lastMiles){
+    document.getElementById('st-dist').textContent=RT.lastMiles.toFixed(0)+' mi';
+    const stops=Math.max(0,Math.ceil(RT.lastMiles/effective)-1);
+    const el=document.getElementById('st-stops');
+    el.textContent=stops===0?'None needed':stops+' stop'+(stops>1?'s':'');
+    el.className='stat-v '+(stops>2?'warn':stops>0?'':'good');
+  }
+}
+
+
+// ═══════════════════════════════════════════════
+// LEG BATTERY STATE CARDS (v12)
+// ═══════════════════════════════════════════════
+const LEG_STATE = {}; // keyed by leg index: {departPct, chargeToPct}
+
+function legClass(pct){
+  if(pct<=10) return 'danger';
+  if(pct<=20) return 'warn';
+  return 'good';
+}
+
+function pctToMi(pct){
+  return Math.round((pct/100)*BASE_SUMMER);
+}
+
+function calcLegArrive(departPct, legMi){
+  const usedPct = (legMi / BASE_SUMMER) * 100;
+  return Math.max(0, departPct - usedPct);
+}
+
+// IONIQ 5 AWD real-world charging curve
+// Returns estimated charge time in minutes from fromPct to toPct
+// at a charger providing chargerKwAvail kW
+function calcChargeTime(fromPct, toPct, chargerKwAvail){
+  if(toPct <= fromPct) return 0;
+  
+  // IONIQ 5 AWD 77.4kWh — real-world charging acceptance by SOC band
+  // Based on observed charging sessions (peak ~231kW, avg ~175kW 10-80%)
+  const IONIQ5_CURVE = [
+    {maxSoc:15, acceptKw:150},  // ramp up
+    {maxSoc:25, acceptKw:220},  // approaching peak
+    {maxSoc:55, acceptKw:220},  // peak plateau
+    {maxSoc:70, acceptKw:160},  // taper begins
+    {maxSoc:80, acceptKw:100},  // significant taper
+    {maxSoc:90, acceptKw: 50},  // slow
+    {maxSoc:100,acceptKw: 20},  // trickle
+  ];
+  
+  const chargerPeak = chargerKwAvail || chargerKw[chargerMode] || 150;
+  
+  // Integrate charge time across SOC bands
+  let totalMins = 0;
+  let soc = fromPct;
+  
+  for(const band of IONIQ5_CURVE){
+    if(soc >= toPct) break;
+    if(soc >= band.maxSoc) continue;
+    const bandEnd = Math.min(toPct, band.maxSoc);
+    const bandPct = bandEnd - soc;
+    const bandKwh = (bandPct / 100) * BATTERY_KWH;
+    // Effective rate = min of charger output and car acceptance
+    const effectiveKw = Math.min(chargerPeak, band.acceptKw);
+    // Add 10% overhead for connection/startup/thermal
+    const bandMins = (bandKwh / effectiveKw) * 60 * 1.10;
+    totalMins += bandMins;
+    soc = bandEnd;
+  }
+  
+  return Math.max(1, Math.round(totalMins));
+}
+
+// Helper: get charger kW for a specific stop based on selected charger station
+// For now uses the legacy chargerKw until we wire per-stop charger selection
+function getStopChargerKw(legIdx){
+  // If a charger was added as a stop, try to get its kW from RT.chargerData
+  return chargerKw[chargerMode] || 150;
+}
+
+function buildLegCards(legMiles, locationNames){
+  const container = document.getElementById('leg-cards');
+  const section = document.getElementById('leg-section');
+  container.innerHTML = '';
+
+  if(!legMiles || legMiles.length === 0){ section.style.display='none'; return; }
+  section.style.display = 'block';
+
+  // Init LEG_STATE if not set
+  legMiles.forEach((_,i) => {
+    if(!LEG_STATE[i]) LEG_STATE[i] = { departPct: i===0 ? 80 : null, chargeToPct: 80 };
+  });
+
+  // Forward-pass: calculate arrive/depart for each leg
+  recalcAllLegs(legMiles);
+}
+
+function recalcAllLegs(legMiles){
+  if(!legMiles) return;
+  const container = document.getElementById('leg-cards');
+  container.innerHTML = '';
+
+  let runningDepartPct = LEG_STATE[0]?.departPct ?? 80;
+
+  legMiles.forEach((mi, i) => {
+    const isLastLeg = i === legMiles.length - 1;
+    const arrivePct = Math.max(0, calcLegArrive(runningDepartPct, mi));
+    const chargeToPct = isLastLeg ? null : (LEG_STATE[i]?.chargeToPct ?? 80);
+    const stopKw = getStopChargerKw(i);
+    const chargeTimeMins = (!isLastLeg && chargeToPct > arrivePct) ? calcChargeTime(arrivePct, chargeToPct, stopKw) : 0;
+    const milesAdded = !isLastLeg ? Math.max(0, Math.round(((chargeToPct||0) - arrivePct)/100*BASE_SUMMER)) : 0;
+    const nextDepartPct = isLastLeg ? null : Math.min(100, chargeToPct ?? arrivePct);
+
+    // Store arrive for display
+    LEG_STATE[i]._arrivePct = arrivePct;
+    LEG_STATE[i]._nextDepart = nextDepartPct;
+
+    const fromName = RT.legNames?.[i] || (i===0 ? 'Start' : `Stop ${i}`);
+    const toName   = RT.legNames?.[i+1] || (i===legMiles.length-1 ? 'Destination' : `Stop ${i+1}`);
+
+    const arrCls = legClass(arrivePct);
+    const arrMi  = pctToMi(arrivePct);
+    const depMi  = pctToMi(runningDepartPct);
+    const chgMi  = pctToMi(chargeToPct||0);
+
+    // Bar widths
+    const arrW = arrivePct.toFixed(1);
+    const depW = (chargeToPct||arrivePct).toFixed(1);
+
+    const card = document.createElement('div');
+    card.className = 'leg-card';
+    card.id = `leg-card-${i}`;
+
+    card.innerHTML = `
+      <div class="leg-card-title">
+        <span style="display:flex;align-items:center;gap:5px;">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${STOP_RING_COLORS[i]||'#888'};flex-shrink:0;border:1.5px solid rgba(0,0,0,0.15);"></span>
+          Leg ${i+1}: ${fromName} → ${toName}
+        </span>
+        <span class="leg-dist-badge">${mi.toFixed(0)} mi</span>
+      </div>
+      <div style="font-size:9px;color:#888780;margin-bottom:6px;padding-left:15px;">
+        📍 Ring on map = range from this stop at departure charge
+      </div>
+
+      ${i===0 ? `
+      <div class="depart-edit-row">
+        <span class="depart-edit-lbl">Depart charge:</span>
+        <input class="depart-edit-input" type="number" min="10" max="100" step="1"
+          value="${runningDepartPct.toFixed(0)}"
+          onchange="setLegDepart(0, parseFloat(this.value))">
+        <span style="font-size:10px;color:#1D9E75;font-weight:600;">${runningDepartPct.toFixed(0)}% · ${depMi} mi</span>
+      </div>` : `
+      <div class="leg-row">
+        <span class="leg-lbl">⬆️ Depart</span>
+        <span class="leg-val good">${runningDepartPct.toFixed(0)}% · ${depMi} mi</span>
+      </div>`}
+
+      <div class="leg-row">
+        <span class="leg-lbl">⬇️ Arrive</span>
+        <span class="leg-val ${arrCls}">${arrivePct.toFixed(0)}% · ${arrMi} mi remaining${arrivePct<=10?' ⚠️ LOW':''}</span>
+      </div>
+
+      <!-- Battery bar -->
+      <div class="batt-bar-wrap">
+        <div class="batt-bar-fill batt-bar-depart" style="width:${depW}%"></div>
+        <div class="batt-bar-fill batt-bar-arrive ${arrivePct<=15?'batt-bar-danger':''}" style="width:${arrW}%"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:#888780;margin-bottom:4px;">
+        <span>0%</span><span>Arrive: ${arrivePct.toFixed(0)}%</span><span>Depart: ${runningDepartPct.toFixed(0)}%</span><span>100%</span>
+      </div>
+
+      ${!isLastLeg ? `
+      <div class="charge-target-row">
+        <span class="charge-target-lbl">Charge to:</span>
+        <input class="charge-target-input" type="number" min="${Math.ceil(arrivePct)}" max="100" step="1"
+          value="${chargeToPct}"
+          onchange="setLegChargeTo(${i}, parseFloat(this.value))">
+        <span class="charge-target-info">% · ${chgMi} mi</span>
+        <span class="charge-time-badge">~${chargeTimeMins} min</span>
+      </div>
+      <div style="margin-top:5px;padding:7px 10px;background:#f0f6ff;border-radius:8px;font-size:10px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;color:#555;">
+          <span>⚡ Arrive:</span><span style="font-weight:700;color:${arrivePct<=15?'#ef4444':arrivePct<=25?'#f97316':'#1D9E75'}">${arrivePct.toFixed(0)}% · ${arrMi} mi</span>
+          <span>🔋 Add:</span><span style="font-weight:700;color:#185FA5">${milesAdded} mi range</span>
+          <span>⏱ Time:</span><span style="font-weight:700;color:#185FA5">~${chargeTimeMins} min</span>
+          <span>🚗 Depart:</span><span style="font-weight:700;color:#1D9E75">${nextDepartPct?.toFixed(0)}% · ${pctToMi(nextDepartPct||0)} mi</span>
+        </div>
+        <div style="margin-top:4px;font-size:9px;color:#888780;">
+          Based on IONIQ 5 AWD charging curve · actual time varies with temp & battery condition
+        </div>
+      </div>` : `
+      <div style="margin-top:4px;font-size:10px;color:#888780;">
+        🏁 Arrives at destination with <span class="leg-val ${arrCls}" style="font-size:10px;">${arrivePct.toFixed(0)}% · ${arrMi} mi</span> remaining
+      </div>`}
+    `;
+    container.appendChild(card);
+
+    // Next leg departs from charged-up state
+    runningDepartPct = isLastLeg ? arrivePct : (nextDepartPct ?? arrivePct);
+  });
+
+  // Redraw stop range rings to reflect updated departure %s
+  refreshStopRings();
+}
+
+function setLegDepart(legIdx, val){
+  LEG_STATE[legIdx] = LEG_STATE[legIdx] || {};
+  LEG_STATE[legIdx].departPct = Math.max(10, Math.min(100, val));
+  recalcAllLegs(RT.legMiles);
+}
+
+function setLegChargeTo(legIdx, val){
+  LEG_STATE[legIdx] = LEG_STATE[legIdx] || {};
+  LEG_STATE[legIdx].chargeToPct = Math.max(LEG_STATE[legIdx]._arrivePct||10, Math.min(100, val));
+  recalcAllLegs(RT.legMiles);
+}
+
+
+// ═══════════════════════════════════════════════
+// STOP RANGE RINGS (v13)
+// Drawn at Start + each waypoint stop, radius = departure miles from that point
+// ═══════════════════════════════════════════════
+
+// Colors: index 0=start, 1=stop1, 2=stop2
+const STOP_RING_COLORS = ['#185FA5','#1D9E75','#f97316','#9333ea','#e11d48','#0891b2','#ca8a04','#16a34a'];
+const STOP_RING_NAMES  = ['Start','Stop 1','Stop 2','Stop 3','Stop 4','Stop 5','Stop 6','Stop 7'];
+const stopRingLayers   = {};   // keyed by index 0,1,2
+
+function clearStopRings(){
+  Object.values(stopRingLayers).forEach(l=>{ if(l) map.removeLayer(l); });
+  Object.keys(stopRingLayers).forEach(k=>delete stopRingLayers[k]);
+}
+
+// Called after route calculated and leg cards built
+// coords = array of {lat,lng} for [start, ...stops] (NOT including destination)
+// departPcts = array of departure % for each point
+function drawStopRings(coords, departPcts){
+  clearStopRings();
+  if(!coords||!coords.length) return;
+
+  coords.forEach((coord,i)=>{
+    if(!coord||isNaN(coord.lat)||isNaN(coord.lng)) return;
+    const pct = departPcts[i] ?? 80;
+    const rangeMi = (pct/100) * BASE_SUMMER;
+    const color = STOP_RING_COLORS[i] || '#888780';
+    const name  = STOP_RING_NAMES[i]  || `Stop ${i}`;
+    const label = `${name} — Depart ${pct.toFixed(0)}% · ${Math.round(rangeMi)} mi range`;
+
+    const ringRadM3 = rangeMi * 1609.344;
+    const ringCoords3 = [];
+    const steps3 = 64;
+    for(let si=0;si<=steps3;si++){
+      const angle = (si/steps3)*2*Math.PI;
+      const dLat3 = (ringRadM3/6371000)*(180/Math.PI);
+      const dLng3 = dLat3/Math.cos(coord.lat*Math.PI/180);
+      ringCoords3.push([coord.lng+dLng3*Math.sin(angle), coord.lat+dLat3*Math.cos(angle)]);
+    }
+    const srcId3 = 'stop-ring-src-'+i, layId3 = 'stop-ring-lay-'+i;
+    const fillSrcId3 = 'stop-ring-fill-src-'+i, fillLayId3 = 'stop-ring-fill-lay-'+i;
+    try{
+      if(!mapLoaded) return;
+      if(map.getLayer(layId3)) map.removeLayer(layId3);
+      if(map.getSource(srcId3)) map.removeSource(srcId3);
+      if(map.getLayer(fillLayId3)) map.removeLayer(fillLayId3);
+      if(map.getSource(fillSrcId3)) map.removeSource(fillSrcId3);
+      // Fill
+      map.addSource(fillSrcId3,{type:'geojson',data:{type:'Feature',geometry:{type:'Polygon',coordinates:[ringCoords3]}}});
+      map.addLayer({id:fillLayId3,type:'fill',source:fillSrcId3,paint:{'fill-color':color,'fill-opacity':0.04}});
+      // Outline
+      map.addSource(srcId3,{type:'geojson',data:{type:'Feature',geometry:{type:'LineString',coordinates:ringCoords3}}});
+      map.addLayer({id:layId3,type:'line',source:srcId3,paint:{'line-color':color,'line-width':2.5,'line-opacity':0.85,'line-dasharray':i===0?[4,3]:[6,4]}});
+      stopRingLayers[i] = layId3;
+    }catch(e){ console.warn('Stop ring GL error:',e.message); }
+  });
+
+  // Update panel legend
+  const legendSection = document.getElementById('stop-ring-legend-section');
+  const legend = document.getElementById('stop-ring-legend');
+  if(legend && coords.length > 0){
+    legend.innerHTML = coords.map((_,i) => {
+      const pct = departPcts[i] ?? 80;
+      const mi  = Math.round((pct/100)*BASE_SUMMER);
+      const col = STOP_RING_COLORS[i] || '#888';
+      const nm  = STOP_RING_NAMES[i]  || `Stop ${i}`;
+      return `<div class="stop-ring-pill" style="color:${col};border-color:${col};background:${col}18;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${col};display:inline-block;flex-shrink:0;"></span>
+        ${nm}: ${pct.toFixed(0)}% · ${mi} mi
+      </div>`;
+    }).join('');
+    if(legendSection) legendSection.style.display = 'block';
+  } else if(legendSection){
+    legendSection.style.display = 'none';
+  }
+}
+
+// Recompute and redraw stop rings from current leg state
+function refreshStopRings(){
+  if(!RT.legMiles || !RT.stopCoords) return;
+
+  // Forward-pass to get departure % at each stop point (same logic as recalcAllLegs)
+  const departPcts = [];
+  let running = LEG_STATE[0]?.departPct ?? 80;
+
+  RT.stopCoords.forEach((coord, i) => {
+    departPcts.push(running);
+    if(!RT.legMiles[i]) return;
+    const arrivePct = Math.max(0, running - (RT.legMiles[i]/BASE_SUMMER)*100);
+    const chargeTo  = i === RT.stopCoords.length-1 ? arrivePct : (LEG_STATE[i]?.chargeToPct ?? 80);
+    running = Math.min(100, chargeTo);
+  });
+
+  drawStopRings(RT.stopCoords, departPcts);
+}
+
+// ═══════════════════════════════════════════════
+// CALCULATE ROUTE
+// ═══════════════════════════════════════════════
+async function calcRoute(){
+  const btn=document.getElementById('calc-btn');
+  btn.disabled=true; btn.textContent='⏳ Calculating…';
+  setStatus('loading','Resolving locations…');
+
+  try{
+    const startLoc=await resolveInput('start');
+    const endLoc=await resolveInput('end');
+    if(!startLoc) throw new Error('Enter a start location');
+    if(!endLoc)   throw new Error('Enter a destination');
+
+    const coords=[startLoc];
+
+    // Dynamic stops — iterate all stop rows by their unique IDs
+    const stopIds = getAllStopIds();
+    RT.wpCount = stopIds.length;
+    for(const sid of stopIds){
+      const inp = document.getElementById('inp-'+sid);
+      const q = inp ? inp.value.trim() : '';
+      if(!q) continue;
+      try{
+        const loc = acSelected['inp-'+sid] || await geocode(q);
+        if(loc){ coords.push(loc); acSelected['inp-'+sid]=loc; }
+      }catch(e){ console.warn('Stop geocode failed:',sid,e.message); }
+    }
+    coords.push(endLoc);
+
+    setStatus('loading','Getting driving route…');
+    const route=await getRoute(coords);
+
+    clearStopRings();
+    RT.routeCoords = route.geometry.coordinates;
+    drawRoute(route.geometry.coordinates);
+    // map.fitBounds(RT.routeLayer.getBounds(),{padding:[50,50]});
+
+    RT.routeCoords=route.geometry.coordinates;
+    const totalMi=route.distance*0.000621371;
+    RT.lastMiles=totalMi;
+
+    // Extract per-leg distances in miles (OSRM returns legs[] for each waypoint segment)
+    const legMiles = (route.legs||[]).map(leg => leg.distance * 0.000621371);
+    // If OSRM didn't split into legs (single segment), use total
+    if(legMiles.length===0) legMiles.push(totalMi);
+    RT.legMiles = legMiles;
+
+    // Build human-readable location names for leg labels
+    const legNames = [
+      (document.getElementById('inp-start').value||'Start').split(',')[0].trim(),
+    ];
+    getAllStopIds().forEach(sid=>{
+      const inp=document.getElementById('inp-'+sid);
+      const v=(inp?.value||'').trim();
+      if(v) legNames.push(v.split(',')[0].trim());
+    });
+    legNames.push((document.getElementById('inp-end').value||'Destination').split(',')[0].trim());
+    RT.legNames = legNames;
+
+    // Store stop coords: start + each waypoint (not destination)
+    // coords[] has [start, ...waypoints, end] — stop rings for all except destination
+    RT.stopCoords = coords.slice(0, coords.length - 1); // exclude destination
+
+    // Reset LEG_STATE for new route (keep depart % for leg 0 if already set)
+    const savedDepart = LEG_STATE[0]?.departPct ?? 80;
+    Object.keys(LEG_STATE).forEach(k=>delete LEG_STATE[k]);
+    LEG_STATE[0] = {departPct: savedDepart, chargeToPct: 80};
+
+    updateRouteStats();
+    buildLegCards(legMiles, legNames);
+    refreshStopRings();
+
+    // Search radius = corridor slider value + buffer
+    const corrMi=parseInt(document.getElementById('sl-corridor').value);
+
+    // Sample every ~40 miles along the route (more points = better coverage)
+    // Use NREL nearby-route endpoint — single POST call, whole route, server-side corridor filter
+    // This is the correct API for route-based EV station search
+    const corrMiSearch = Math.max(corrMi, 5); // minimum 5mi corridor
+    setStatus('loading', `🔍 Fetching real NREL stations along route (${corrMiSearch} mi corridor)…`);
+
+    // Sample route coords — NREL accepts up to ~500 points in LINESTRING
+    // Downsample if needed to stay under URL length limits when using POST
+    const maxPts = 300;
+    const step = Math.max(1, Math.floor(RT.routeCoords.length / maxPts));
+    const sampledCoords = RT.routeCoords.filter((_, i) => i % step === 0);
+    // Always include last point
+    if(sampledCoords[sampledCoords.length-1] !== RT.routeCoords[RT.routeCoords.length-1]){
+      sampledCoords.push(RT.routeCoords[RT.routeCoords.length-1]);
+    }
+
+    // Build WKT LINESTRING: "LINESTRING(lng lat,lng lat,...)"
+    const linestring = 'LINESTRING(' + sampledCoords.map(c => `${c[0]} ${c[1]}`).join(',') + ')';
+
+    const allChargers = await fetchNearbyRoute(linestring, corrMiSearch);
+
+    // Normalize chargers to internal display format FIRST
+    const displayChargers = allChargers.map(c => {
+      // Already in old OCM/display format (from NREL fallback) — pass through
+      if(c.AddressInfo) return c;
+      // Convert PlugShare normalized format to display format
+      return {
+        AddressInfo: {
+          Title: c.name,
+          Latitude: c.lat,
+          Longitude: c.lng,
+          AddressLine1: c.address || '',
+          Town: c.city || '',
+          StateOrProvince: c.state || '',
+        },
+        OperatorInfo: { Title: c.networkRaw || c.network || 'Unknown' },
+        Connections: [{ PowerKW: c.maxKw, ConnectionTypeID: c.connectors?.includes('NACS') ? 7 : 6 }],
+        NumberOfPoints: c.stalls,
+        _nk: c.network,
+        _ck: c.connectors?.includes('NACS') ? 'nacs' : c.connectors?.includes('CHAdeMO') ? 'chademo' : 'ccs',
+        _connLabels: c.connectors || ['CCS1'],
+        _dcFast: c.stalls,
+        _l2: 0,
+        _plugshareUrl: `https://www.plugshare.com/location/${c.id?.replace('ps_','')}`,
+        _mapsUrl: `https://maps.google.com/?q=${c.lat},${c.lng}`,
+        _price: null,
+        _priceNote: 'Varies — see network app',
+        source: c.source,
+      };
+    });
+    // Compute route distance AFTER normalization so AddressInfo exists
+    displayChargers.forEach(c => {
+      const lat = c.AddressInfo?.Latitude, lng = c.AddressInfo?.Longitude;
+      if(lat && lng && RT.routeCoords) {
+        c._routeDist = distToRoute(lat, lng);
+        c._routeProgress = routeProgress(lat, lng); // 0=start, 1=end
+      }
+    });
+    RT.chargerData = displayChargers;
+    plotChargers(displayChargers);
+    const chargers = allChargers;
+
+    const priced = chargers.filter(c => c._price);
+    if(priced.length){
+      const avg = priced.reduce((a,c) => a+c._price, 0) / priced.length;
+      document.getElementById('st-price').textContent = '$'+avg.toFixed(2)+'/kWh';
+    }
+
+    setStatus('ok', `✅ Route: ${totalMi.toFixed(0)} mi · ${displayChargers.length} stations (PlugShare)`);
+
+  }catch(err){
+    setStatus('err','❌ '+err.message);
+    console.error(err);
+  }finally{
+    btn.disabled=false; btn.textContent='⚡ CALCULATE ROUTE';
+  }
+}
+
+
+function drawRoute(coords){
+  if(!mapLoaded) { setTimeout(()=>drawRoute(coords),300); return; }
+  try{
+    const src = map.getSource('route-src');
+    if(src) src.setData({type:'Feature',geometry:{type:'LineString',coordinates:coords}});
+  }catch(e){ console.warn('drawRoute error:', e.message); }
+}
+function setStatus(type,msg){
+  const el=document.getElementById('status');
+  el.textContent=msg; el.className=type;
+}
+
+// ── EVENT DELEGATION for Mapbox GL popup buttons ──
+// Popup innerHTML can't use onclick= directly, so we catch clicks here
+document.addEventListener('click', function(e){
+  const btn = e.target.closest('[data-action]');
+  if(!btn) return;
+  const action = btn.dataset.action;
+  const addr = btn.dataset.addr || '';
+  const name = btn.dataset.name || addr;
+  if(action === 'addstop'){
+    addChargerAsStop(name, addr);
+  } else if(action === 'copy'){
+    copyChargerAddress(addr);
+  }
+});
+
+function togglePanel(){
+  const panel = document.getElementById('panel');
+  const btn   = document.getElementById('panel-toggle');
+  if(!panel || !btn) return;
+  const collapsed = panel.classList.toggle('collapsed');
+  btn.classList.toggle('open', !collapsed);
+  btn.textContent = collapsed ? '›' : '‹';
+  btn.title = collapsed ? 'Show panel' : 'Hide panel';
+  btn.style.left = collapsed ? '0px' : '';
+  btn.style.borderRadius = collapsed ? '0 10px 10px 0' : '';
+  // Always keep button visible
+  btn.style.display = 'flex';
+  btn.style.visibility = 'visible';
+}
+
+function resetView(){ map.flyTo({center:[RLNG,RLAT],zoom:6.5}); }
+
+// ═══════════════════════════════════════════════
+// SAVE TRIP — named HTML download
+// ═══════════════════════════════════════════════
+function openModal(){
+  const tn=document.getElementById('trip-name').value.trim();
+  const startV=document.getElementById('inp-start').value.trim();
+  const endV=document.getElementById('inp-end').value.trim();
+  const suggest=tn||[startV?startV.split(',')[0]:'',endV?endV.split(',')[0]:''].filter(Boolean).join(' to ')||'My IONIQ5 Trip';
+  document.getElementById('modal-name').value=suggest;
+  document.getElementById('save-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('modal-name').select(),50);
+}
+
+function closeModal(){ document.getElementById('save-modal').classList.remove('open'); }
+
+function doSave(){
+  let name=document.getElementById('modal-name').value.trim()||'IONIQ5_Trip';
+  // sanitize filename
+  const fname=name.replace(/[^a-zA-Z0-9 _\-]/g,'').replace(/\s+/g,'_')+'_EV4Dummies.html';
+  closeModal();
+  // Inject current input values into the HTML before saving
+  let html=document.documentElement.outerHTML;
+  // Embed current field values
+  // Save start/end
+  ['inp-start','inp-end'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el&&el.value){
+      html=html.replace(new RegExp(`id="${id}"([^>]*?)>`),`id="${id}"$1 value="${el.value.replace(/"/g,'&quot;')}">`);
+    }
+  });
+  // Save dynamic stops — inject JS to re-add them on load
+  const stopVals = getAllStopIds().map(sid=>{
+    const inp=document.getElementById('inp-'+sid);
+    return inp?.value?.trim()||'';
+  }).filter(Boolean);
+  if(stopVals.length){
+    const initStops = `\n<script>window.addEventListener('DOMContentLoaded',function(){${stopVals.map(v=>`addStop(${JSON.stringify(v)})`).join(';')};});<\/script>`;
+    html = html.replace('</body>', initStops+'\n</body>');
+  }
+  // Update title
+  html=html.replace(/<title>.*?<\/title>/,`<title>${name} — IONIQ5 v11</title>`);
+  // Update trip name input
+  html=html.replace(/id="trip-name"([^>]*?)>/,`id="trip-name"$1 value="${name.replace(/"/g,'&quot;')}">`);
+
+  const blob=new Blob([html],{type:'text/html'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=fname;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);URL.revokeObjectURL(a.href);
+  setStatus('ok','💾 Saved as '+fname);
+}
+
+document.getElementById('save-modal').addEventListener('click',function(e){if(e.target===this)closeModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('save-modal').classList.contains('open'))doSave();});
+
+// ═══════════════════════════════════════════════
+// RANGE RING LOGIC (from v10)
+// ═══════════════════════════════════════════════
+const RINGS=[
+  {key:'s0',label:'Summer · one-way · no stop',group:'ow',defaultColor:'#1D9E75',defaultPattern:'dash',defaultWeight:2,defaultFill:0.04,defaultVisible:true},
+  {key:'w0',label:'Winter · one-way · no stop',group:'ow',defaultColor:'#000000',defaultPattern:'dot',defaultWeight:2,defaultFill:0.04,defaultVisible:true},
+  {key:'s1',label:'Summer · one-way · 1 stop',group:'ow',defaultColor:'#1D9E75',defaultPattern:'solid',defaultWeight:3,defaultFill:0.07,defaultVisible:true},
+  {key:'w1',label:'Winter · one-way · 1 stop',group:'ow',defaultColor:'#000000',defaultPattern:'dotdash',defaultWeight:1.5,defaultFill:0.07,defaultVisible:true},
+  {key:'rs',label:'Summer · round-trip',group:'rt',defaultColor:'#D85A30',defaultPattern:'solid',defaultWeight:2.5,defaultFill:0.09,defaultVisible:true},
+  {key:'rw',label:'Winter · round-trip',group:'rt',defaultColor:'#993C1D',defaultPattern:'dash',defaultWeight:2.5,defaultFill:0.09,defaultVisible:true},
+];
+const ringStyle={};
+RINGS.forEach(r=>{ringStyle[r.key]={visible:r.defaultVisible,color:r.defaultColor,pattern:r.defaultPattern,weight:r.defaultWeight,fill:r.defaultFill};});
+
+const PAT_SVG={
+  solid:`<svg viewBox="0 0 22 10"><line x1="1" y1="5" x2="21" y2="5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`,
+  dash:`<svg viewBox="0 0 22 10"><line x1="1" y1="5" x2="21" y2="5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5 3"/></svg>`,
+  dot:`<svg viewBox="0 0 22 10"><line x1="1" y1="5" x2="21" y2="5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="1 4"/></svg>`,
+  dotdash:`<svg viewBox="0 0 22 10"><line x1="1" y1="5" x2="21" y2="5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5 3 1 3"/></svg>`,
+};
+
+const leafletLayers={};
+function patDash(p){return{solid:null,dash:'12 8',dot:'2 8',dotdash:'12 6 2 6'}[p];}
+function getMiPerMin(mode){return(chargerKw[mode]*MI_PER_KWH)/60;}
+function getFullChargeMin(mode){return Math.round((0.70*BATTERY_KWH)/chargerKw[mode]*60);}
+function getChargerStats(mode){const m=getMiPerMin(mode),f=getFullChargeMin(mode);return{rateLabel:'~'+m.toFixed(2)+' mi/min',fullLabel:f>=60?'~'+(f/60).toFixed(1)+' hrs':'~'+f+' min',miPer10:Math.round(m*10),miPer30:Math.round(m*30)};}
+function getMiAdded(){return Math.round(parseInt(document.getElementById('sl-time').value)*getMiPerMin(chargerMode));}
+function getRadius(key){const a=getMiAdded();return{s0:BASE_SUMMER,w0:BASE_WINTER,s1:BASE_SUMMER+a,w1:BASE_WINTER+a,rs:Math.round(BASE_SUMMER/2),rw:Math.round(BASE_WINTER/2)}[key];}
+
+function redrawRings(){
+  if(!mapLoaded) return;
+  RINGS.forEach(r=>{
+    const s = ringStyle[r.key];
+    const srcId     = 'ring-src-'+r.key,     layId     = 'ring-lay-'+r.key;
+    const fillSrcId = 'ring-fill-src-'+r.key, fillLayId = 'ring-fill-lay-'+r.key;
+
+    // Always remove existing layers first (clean slate)
+    try{ if(map.getLayer(layId))     map.removeLayer(layId); }catch(e){}
+    try{ if(map.getSource(srcId))    map.removeSource(srcId); }catch(e){}
+    try{ if(map.getLayer(fillLayId)) map.removeLayer(fillLayId); }catch(e){}
+    try{ if(map.getSource(fillSrcId))map.removeSource(fillSrcId); }catch(e){}
+
+    // Only re-draw if visible
+    if(!s.visible) return;
+
+    const ringRadM = getRadius(r.key) * MI;
+    if(!ringRadM) return;
+    const steps = 64;
+    const ringCoords = [];
+    for(let i=0;i<=steps;i++){
+      const angle = (i/steps)*2*Math.PI;
+      const dLat = (ringRadM/6371000)*(180/Math.PI);
+      const dLng = dLat/Math.cos(RLAT*Math.PI/180);
+      ringCoords.push([RLNG+dLng*Math.sin(angle), RLAT+dLat*Math.cos(angle)]);
+    }
+
+    try{
+      // Fill layer
+      if(s.fill > 0){
+        map.addSource(fillSrcId,{type:'geojson',data:{type:'Feature',geometry:{type:'Polygon',coordinates:[ringCoords]}}});
+        map.addLayer({id:fillLayId,type:'fill',source:fillSrcId,paint:{'fill-color':s.color,'fill-opacity':s.fill*0.4}});
+      }
+      // Outline layer
+      const dashArr = s.pattern==='dashed'?[4,3]:s.pattern==='dotted'?[1,2]:s.pattern==='dotdash'?[4,2,1,2]:[1];
+      map.addSource(srcId,{type:'geojson',data:{type:'Feature',geometry:{type:'LineString',coordinates:ringCoords}}});
+      map.addLayer({id:layId,type:'line',source:srcId,paint:{'line-color':s.color,'line-width':s.weight,'line-opacity':0.85,'line-dasharray':dashArr}});
+    }catch(e){ console.warn('Ring draw error:',r.key,e.message); }
+  });
+}
+
+function hideRings(){/* rings always visible */}
+function showRings(){/* rings always visible */}
+
+function buildRingBlocks(){
+  ['ow','rt'].forEach(group=>{
+    const container=document.getElementById('ring-blocks-'+group);
+    RINGS.filter(r=>r.group===group).forEach(r=>{
+      const s=ringStyle[r.key];
+      const block=document.createElement('div');
+      block.className='ring-block'+(group==='rt'?' rt-block':'');
+      block.innerHTML=`
+        <div class="ring-hdr">
+          <input type="checkbox" id="chk-${r.key}" ${s.visible?'checked':''} onchange="onStyleChange('${r.key}')">
+          <canvas class="ring-prev" id="prev-${r.key}" width="32" height="12"></canvas>
+          <span class="ring-name">${r.label}</span>
+          <span class="ring-badge" id="badge-${r.key}" style="background:${s.color}">— mi</span>
+        </div>
+        <div class="style-grid">
+          <div class="style-cell"><span class="style-lbl">Color</span><input type="color" id="col-${r.key}" value="${s.color}" oninput="onColorChange('${r.key}',this.value)"></div>
+          <div class="style-cell"><span class="style-lbl">Pattern</span>
+            <div class="pat-row" id="pat-${r.key}">
+              ${['solid','dash','dot','dotdash'].map(p=>`<button class="pat-btn${s.pattern===p?' active':''}" onclick="onPatternChange('${r.key}','${p}')">${PAT_SVG[p]}</button>`).join('')}
+            </div></div>
+          <div class="style-cell"><span class="style-lbl">Weight</span>
+            <div class="ms"><input type="range" id="wgt-${r.key}" min="1" max="8" step="0.5" value="${s.weight}" oninput="onWeightChange('${r.key}',this.value)"><span id="wgt-lbl-${r.key}">${s.weight}px</span></div></div>
+          <div class="style-cell"><span class="style-lbl">Fill %</span>
+            <div class="fr"><input type="range" id="fill-${r.key}" min="0" max="0.4" step="0.01" value="${s.fill}" oninput="onFillChange('${r.key}',this.value)"><span id="fill-lbl-${r.key}">${Math.round(s.fill*100)}%</span></div></div>
+        </div>`;
+      container.appendChild(block);
+    });
+  });
+}
+
+function drawPreview(key){
+  const s=ringStyle[key],canvas=document.getElementById('prev-'+key);
+  if(!canvas)return;
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,32,12);
+  ctx.fillStyle=s.color+Math.round(s.fill*255).toString(16).padStart(2,'0');
+  ctx.fillRect(0,0,32,12);
+  ctx.strokeStyle=s.color;ctx.lineWidth=Math.min(s.weight,4);ctx.lineCap='round';
+  ctx.setLineDash({solid:[],dash:[6,3],dot:[1,4],dotdash:[6,3,1,3]}[s.pattern]);
+  ctx.beginPath();ctx.moveTo(2,6);ctx.lineTo(30,6);ctx.stroke();
+}
+
+function onStyleChange(key){ringStyle[key].visible=document.getElementById('chk-'+key).checked;redrawRings();drawPreview(key);}
+function onColorChange(key,val){ringStyle[key].color=val;document.getElementById('badge-'+key).style.background=val;redrawRings();drawPreview(key);}
+function onPatternChange(key,pat){ringStyle[key].pattern=pat;document.querySelectorAll('#pat-'+key+' .pat-btn').forEach((b,i)=>b.classList.toggle('active',['solid','dash','dot','dotdash'][i]===pat));redrawRings();drawPreview(key);}
+function onWeightChange(key,val){ringStyle[key].weight=parseFloat(val);document.getElementById('wgt-lbl-'+key).textContent=parseFloat(val).toFixed(1)+'px';redrawRings();drawPreview(key);}
+function onFillChange(key,val){ringStyle[key].fill=parseFloat(val);document.getElementById('fill-lbl-'+key).textContent=Math.round(parseFloat(val)*100)+'%';redrawRings();drawPreview(key);}
+function onKwChange(mode,val){const kw=parseFloat(val);if(!isNaN(kw)&&kw>0){chargerKw[mode]=kw;if(mode===chargerMode)update();}}
+function setCharger(mode){
+  chargerMode=mode;
+  document.getElementById('btn-sc').classList.toggle('active',mode==='sc');
+  document.getElementById('btn-l2').classList.toggle('active',mode==='l2');
+  document.getElementById('kw-sc').style.borderColor=mode==='sc'?'#185FA5':'#d3d1c7';
+  document.getElementById('kw-l2').style.borderColor=mode==='l2'?'#185FA5':'#d3d1c7';
+  update();
+  if(RT.legMiles) recalcAllLegs(RT.legMiles);
+}
+
+function updateCityList(s1,w1,rs,rw){
+  const list=document.getElementById('city-list');list.innerHTML='';
+  CITIES.forEach(c=>{
+    const inRW=c.dist<=rw,inRS=c.dist<=rs,inW1=c.dist<=w1,inS1=c.dist<=s1;
+    let color,tag;
+    if(inRW){color='#D85A30';tag='RT both seasons';}
+    else if(inRS){color='#EF9F27';tag='RT summer only';}
+    else if(inW1){color='#1D9E75';tag='1-stop both';}
+    else if(inS1){color='#185FA5';tag='1-stop summer';}
+    else{color='#888780';tag='hotel trip';}
+    const div=document.createElement('div');div.className='city-item';
+    div.innerHTML=`<span class="city-dot" style="background:${color}"></span><span class="city-nm">${c.name}</span><span class="city-dist">~${c.dist}mi</span><span class="city-tag" style="color:${color}">${tag}</span>`;
+    div.onclick=()=>map.flyTo({center:[c.lng,c.lat],zoom:8});
+    list.appendChild(div);
+  });
+}
+
+function onRangeChange(){
+  BASE_SUMMER=parseInt(document.getElementById('sl-summer').value);
+  BASE_WINTER=parseInt(document.getElementById('sl-winter').value);
+  document.getElementById('lbl-summer').textContent=BASE_SUMMER+' mi';
+  document.getElementById('lbl-winter').textContent=BASE_WINTER+' mi';
+  update();
+}
+
+function update(){
+  const mins=parseInt(document.getElementById('sl-time').value);
+  const c=getChargerStats(chargerMode),added=getMiAdded();
+  const s1=BASE_SUMMER+added,w1=BASE_WINTER+added,rs=Math.round(BASE_SUMMER/2),rw=Math.round(BASE_WINTER/2);
+  document.getElementById('lbl-time').textContent=mins+' min';
+  document.getElementById('res-added').textContent='+'+added+' mi';
+  document.getElementById('res-summer').textContent=s1+' mi';
+  document.getElementById('res-winter').textContent=w1+' mi';
+  document.getElementById('res-note').textContent=(chargerMode==='sc'?'DC Fast':'Level 2')+' · '+mins+' min';
+  document.getElementById('stat-rate').textContent=c.rateLabel;
+  document.getElementById('stat-full').textContent=c.fullLabel;
+  document.getElementById('stat-10').textContent='~'+c.miPer10+' mi';
+  document.getElementById('stat-30').textContent='~'+c.miPer30+' mi';
+  const radii={s0:BASE_SUMMER,w0:BASE_WINTER,s1,w1,rs,rw};
+  RINGS.forEach(r=>{const el=document.getElementById('badge-'+r.key);if(el)el.textContent=radii[r.key]+' mi';});
+  redrawRings();updateCityList(s1,w1,rs,rw);updateRouteStats();
+  if(RT.legMiles) recalcAllLegs(RT.legMiles);
+}
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+buildRingBlocks();
+RINGS.forEach(r=>drawPreview(r.key));
+document.getElementById('kw-sc').style.borderColor='#185FA5';
+update();
+updateRouteStats();
+// Start with no stops — user clicks "+ Add Charge Stop" to add them
+RT.wpCount = 0;
+</script>
+
+<script>
+// ── PWA MANIFEST (no service worker — GitHub Pages handles caching) ──
+const manifest = {
+  "name": "EV Trip Planner",
+  "short_name": "EV Trip Planner",
+  "description": "IONIQ 5 route planner with real EV charger data",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {"src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjkwIiBmaWxsPSIjMDAwMDAwIi8+CiAgPHRleHQgeD0iMjU2IiB5PSIzODAiIGZvbnQtZmFtaWx5PSJBcmlhbCBCbGFjayxBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjQyMCIgZm9udC13ZWlnaHQ9IjkwMCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkU8L3RleHQ+Cjwvc3ZnPg==", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable"},
+    {"src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjkwIiBmaWxsPSIjMDAwMDAwIi8+CiAgPHRleHQgeD0iMjU2IiB5PSIzODAiIGZvbnQtZmFtaWx5PSJBcmlhbCBCbGFjayxBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjQyMCIgZm9udC13ZWlnaHQ9IjkwMCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkU8L3RleHQ+Cjwvc3ZnPg==", "sizes": "192x192", "type": "image/svg+xml"},
+    {"src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjkwIiBmaWxsPSIjMDAwMDAwIi8+CiAgPHRleHQgeD0iMjU2IiB5PSIzODAiIGZvbnQtZmFtaWx5PSJBcmlhbCBCbGFjayxBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjQyMCIgZm9udC13ZWlnaHQ9IjkwMCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkU8L3RleHQ+Cjwvc3ZnPg==", "sizes": "180x180", "type": "image/svg+xml"}
+  ]
+};
+const manifestBlob = new Blob([JSON.stringify(manifest)], {type:'application/manifest+json'});
+const manifestUrl = URL.createObjectURL(manifestBlob);
+const manifestLink = document.createElement('link');
+manifestLink.rel = 'manifest';
+manifestLink.href = manifestUrl;
+document.head.appendChild(manifestLink);
+
+// Apple touch icon
+const appleIcon = document.createElement('link');
+appleIcon.rel = 'apple-touch-icon';
+appleIcon.href = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjkwIiBmaWxsPSIjMDAwMDAwIi8+CiAgPHRleHQgeD0iMjU2IiB5PSIzODAiIGZvbnQtZmFtaWx5PSJBcmlhbCBCbGFjayxBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjQyMCIgZm9udC13ZWlnaHQ9IjkwMCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkU8L3RleHQ+Cjwvc3ZnPg==';
+document.head.appendChild(appleIcon);
+
+// Favicon
+const favicon = document.createElement('link');
+favicon.rel = 'icon';
+favicon.type = 'image/svg+xml';
+favicon.href = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjkwIiBmaWxsPSIjMDAwMDAwIi8+CiAgPHRleHQgeD0iMjU2IiB5PSIzODAiIGZvbnQtZmFtaWx5PSJBcmlhbCBCbGFjayxBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjQyMCIgZm9udC13ZWlnaHQ9IjkwMCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkU8L3RleHQ+Cjwvc3ZnPg==';
+document.head.appendChild(favicon);
+
+
+// ═══════════════════════════════════════════════
+// v3 — FAVORITES SYSTEM
+// ═══════════════════════════════════════════════
+function getFavs(){ try{ return JSON.parse(localStorage.getItem('evtp_favs')||'[]'); }catch(e){ return []; } }
+function saveFavs(arr){ localStorage.setItem('evtp_favs', JSON.stringify(arr)); }
+
+function toggleFavDropdown(fieldId, btn){
+  // Close any other open dropdowns
+  document.querySelectorAll('.fav-dropdown.open').forEach(d=>{
+    if(d.id !== 'fav-'+fieldId) d.classList.remove('open');
+  });
+  const dd = document.getElementById('fav-'+fieldId);
+  if(!dd) return;
+  if(dd.classList.contains('open')){ dd.classList.remove('open'); return; }
+  renderFavDropdown(fieldId);
+  dd.classList.add('open');
+  // Close on outside click
+  setTimeout(()=>{
+    document.addEventListener('click', function closer(e){
+      if(!dd.contains(e.target) && e.target !== btn){
+        dd.classList.remove('open');
+        document.removeEventListener('click', closer);
+      }
+    });
+  }, 100);
+}
+
+function renderFavDropdown(fieldId){
+  const dd = document.getElementById('fav-'+fieldId);
+  if(!dd) return;
+  const favs = getFavs();
+  const inp = document.getElementById('inp-'+fieldId);
+  const currentVal = inp ? inp.value.trim() : '';
+
+  let favHtml = '<div style="padding:8px 12px 4px;font-size:10px;font-weight:700;color:#185FA5;text-transform:uppercase;letter-spacing:0.05em;">📍 Your Saved Places</div>';
+  if(favs.length === 0){
+    favHtml += '<div class="fav-item" style="color:#888;font-style:italic;font-size:11px;">No saved places yet — type an address above then tap "+ Save" below</div>';
+  } else {
+    favs.forEach((f,i)=>{
+      favHtml += `<div class="fav-item" onclick="applyFav('${fieldId}','${f.name}','${f.addr.replace(/'/g,"\'")}')">
+        <span class="fav-item-icon">${f.icon||'📍'}</span>
+        <div style="flex:1;">
+          <div class="fav-item-name">${f.name}</div>
+          <div class="fav-item-addr">${f.addr.substring(0,40)}</div>
+        </div>
+        <span class="fav-delete" onclick="event.stopPropagation();deleteFav(${i},'${fieldId}')" title="Delete">✕</span>
+      </div>`;
+    });
+  }
+  const curVal = document.getElementById('inp-'+fieldId)?.value?.trim() || '';
+  favHtml += `<div style="padding:6px 12px 4px;font-size:10px;color:#888780;border-top:1px solid #f0efe8;margin-top:4px;">
+    ${curVal ? `<strong>Saving:</strong> "${curVal.substring(0,35)}"` : 'Type an address in the field first'}
+  </div>`;
+  favHtml += `<div class="fav-save-row">
+    <input class="fav-save-input" id="fav-name-input-${fieldId}" placeholder="Name (e.g. Home, Work, Mom's…)" value="">
+    <button class="fav-save-btn" onclick="saveAsFav('${fieldId}')">⭐ Save</button>
+  </div>`;
+  dd.innerHTML = favHtml;
+}
+
+function applyFav(fieldId, name, addr){
+  const inp = document.getElementById('inp-'+fieldId);
+  if(inp){ inp.value = addr; inp.dispatchEvent(new Event('input')); }
+  // Also set acSelected so geocode isn't needed if already cached
+  const dd = document.getElementById('fav-'+fieldId);
+  if(dd) dd.classList.remove('open');
+  // Trigger geocode lookup
+  geocode(addr).then(loc=>{
+    acSelected['inp-'+fieldId] = loc;
+    setHint(fieldId, addr);
+  }).catch(()=>{});
+}
+
+function saveAsFav(fieldId){
+  const inp = document.getElementById('inp-'+fieldId);
+  const nameInp = document.getElementById('fav-name-input-'+fieldId);
+  const addr = inp ? inp.value.trim() : '';
+  const name = nameInp ? nameInp.value.trim() : '';
+  if(!addr){ alert('Enter an address first'); return; }
+  if(!name){ alert('Enter a name for this favorite'); return; }
+  const favs = getFavs();
+  // Check for duplicate name
+  const icon = name.toLowerCase().includes('home') ? '🏠'
+    : name.toLowerCase().includes('work') ? '💼'
+    : name.toLowerCase().includes('tesla') || name.toLowerCase().includes('charger') ? '⚡'
+    : '📍';
+  favs.push({ name, addr, icon });
+  saveFavs(favs);
+  renderFavDropdown(fieldId);
+  if(nameInp) nameInp.value = '';
+}
+
+function deleteFav(index, fieldId){
+  const favs = getFavs();
+  favs.splice(index, 1);
+  saveFavs(favs);
+  renderFavDropdown(fieldId);
+}
+
+// Fav button injection handled inside addStop directly (no wrapper needed)
+
+// ═══════════════════════════════════════════════
+// v3 — TRIP SAVE / LOAD (localStorage, in-app)
+// ═══════════════════════════════════════════════
+function getTrips(){ try{ return JSON.parse(localStorage.getItem('evtp_trips')||'[]'); }catch(e){ return []; } }
+function storeTrips(arr){ localStorage.setItem('evtp_trips', JSON.stringify(arr)); }
+
+function saveCurrentTrip(){
+  const startV = document.getElementById('inp-start').value.trim();
+  const endV   = document.getElementById('inp-end').value.trim();
+  if(!startV || !endV){ alert('Enter Start and End first'); return; }
+
+  const nameEl = document.getElementById('trip-name');
+  let name = nameEl ? nameEl.value.trim() : '';
+  if(!name){
+    name = prompt('Name this trip:', [startV.split(',')[0], endV.split(',')[0]].join(' → '));
+    if(!name) return;
+  }
+
+  // Gather all stop values
+  const stops = getAllStopIds().map(sid=>{
+    const inp = document.getElementById('inp-'+sid);
+    return inp ? inp.value.trim() : '';
+  }).filter(Boolean);
+
+  const trip = {
+    id: Date.now(),
+    name,
+    savedAt: new Date().toLocaleDateString(),
+    start: startV,
+    end: endV,
+    stops,
+    // Settings
+    depart: document.getElementById('sl-depart')?.value || '80',
+    corridor: document.getElementById('sl-corridor')?.value || '25',
+    minKw: document.getElementById('sl-minkw')?.value || '50',
+    minStalls: document.getElementById('sl-minstalls')?.value || '1',
+    // Active connections/networks
+    conns: [...RT.activeConns],
+    nets:  [...RT.activeNets],
+  };
+
+  const trips = getTrips();
+  // Check if name exists — overwrite
+  const existing = trips.findIndex(t=>t.name===name);
+  if(existing >= 0){
+    if(!confirm(`Overwrite existing trip "${name}"?`)) return;
+    trips[existing] = trip;
+  } else {
+    trips.unshift(trip);
+  }
+  storeTrips(trips);
+  if(nameEl) nameEl.value = name;
+  setStatus('ok', `✅ Trip "${name}" saved`);
+}
+
+function openTripsModal(){
+  const modal = document.getElementById('trips-modal');
+  if(!modal) return;
+  modal.style.display = 'flex';
+  renderTripsList();
+}
+
+function closeTripsModal(){
+  const modal = document.getElementById('trips-modal');
+  if(modal) modal.style.display = 'none';
+}
+
+function renderTripsList(){
+  const list = document.getElementById('trips-list');
+  if(!list) return;
+  const trips = getTrips();
+  if(!trips.length){
+    list.innerHTML = '<div class="trips-empty">No saved trips yet.<br>Plan a route and tap 💾 Save.</div>';
+    return;
+  }
+  list.innerHTML = trips.map((t,i)=>`
+    <div class="trip-item">
+      <div class="trip-item-name">${t.name}</div>
+      <div class="trip-item-meta">
+        📍 ${t.start.split(',')[0]} → ${t.end.split(',')[0]}
+        ${t.stops.length ? ` · ${t.stops.length} stop${t.stops.length>1?'s':''}` : ''}
+        · ${t.savedAt}
+      </div>
+      <div class="trip-item-actions">
+        <button class="trip-load-btn" onclick="loadTrip(${i})">▶ Load Trip</button>
+        <button class="trip-delete-btn" onclick="deleteTrip(${i})">🗑 Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadTrip(index){
+  const trips = getTrips();
+  const t = trips[index];
+  if(!t) return;
+  closeTripsModal();
+
+  // Fill start/end
+  document.getElementById('inp-start').value = t.start;
+  document.getElementById('inp-end').value   = t.end;
+
+  // Clear existing stops and re-add
+  document.querySelectorAll('.stop-row').forEach(r=>r.remove());
+  RT.wpCount = 0;
+  for(const stop of (t.stops||[])) addStop(stop);
+
+  // Restore settings
+  if(t.depart){
+    const sl = document.getElementById('sl-depart');
+    if(sl){ sl.value = t.depart; onDepart(t.depart); }
+  }
+  if(t.corridor){
+    const sl = document.getElementById('sl-corridor');
+    if(sl){ sl.value = t.corridor; onCorridor(t.corridor); }
+  }
+  if(t.minKw){
+    const sl = document.getElementById('sl-minkw');
+    if(sl){ sl.value = t.minKw; onMinKw(t.minKw); }
+  }
+  if(t.minStalls){
+    const sl = document.getElementById('sl-minstalls');
+    if(sl){ sl.value = t.minStalls; onMinStalls(t.minStalls); }
+  }
+
+  // Restore trip name
+  const nameEl = document.getElementById('trip-name');
+  if(nameEl) nameEl.value = t.name;
+
+  setStatus('ok', `✅ Trip "${t.name}" loaded — tap Calculate Route`);
+}
+
+function deleteTrip(index){
+  const trips = getTrips();
+  const t = trips[index];
+  if(!confirm(`Delete "${t.name}"?`)) return;
+  trips.splice(index,1);
+  storeTrips(trips);
+  renderTripsList();
+}
+
+// ═══════════════════════════════════════════════
+// v3 — PANEL FREEZE FIX
+// ═══════════════════════════════════════════════
+// Prevent panel from disappearing on map interaction
+// Panel freeze protection handled by Mapbox GL (no Leaflet SVG overlay issues)
+
+// Periodic panel visibility check (safety net for zoom freeze)
+setInterval(()=>{
+  const panel = document.getElementById('panel');
+  const btn   = document.getElementById('panel-toggle');
+  if(panel && !panel.classList.contains('collapsed')){
+    if(panel.style.visibility === 'hidden' || panel.style.display === 'none'){
+      panel.style.display  = 'flex';
+      panel.style.visibility = 'visible';
+    }
+  }
+  if(btn && (btn.style.display === 'none' || btn.style.visibility === 'hidden')){
+    btn.style.display = 'flex';
+    btn.style.visibility = 'visible';
+  }
+}, 2000);
+
+// ═══════════════════════════════════════════════
+// v3 — CHARGER POPUP EXTRA BUTTONS
+// ═══════════════════════════════════════════════
+function addChargerAsStop(name, addr){
+  const useAddr = (addr && addr.trim()) ? addr.trim() : (name||'').trim();
+  addStop(useAddr);
+  // Close any open popups
+  document.querySelectorAll('.mapboxgl-popup').forEach(p=>p.remove());
+  setStatus('ok', `✅ Added "${(name||useAddr).substring(0,30)}" as a charge stop`);
+}
+
+function copyChargerAddress(addr){
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(addr).then(()=>setStatus('ok','📋 Address copied!'));
+  } else {
+    // Fallback for older browsers
+    const el = document.createElement('textarea');
+    el.value = addr; document.body.appendChild(el);
+    el.select(); document.execCommand('copy');
+    document.body.removeChild(el);
+    setStatus('ok','📋 Address copied!');
+  }
+}
+
+</script>
+</body>
+</html>
